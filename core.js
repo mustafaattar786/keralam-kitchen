@@ -61,9 +61,10 @@ var KKCore = (function () {
       s += '• ' + l.name + ' (' + l.variant + (l.addons && l.addons.length ? ' + ' + l.addons.join(', ') : '') + ') × ' + l.qty + ' = ' + money(l.amount) + '\n';
     });
     if (o.total) s += 'Total: ' + money(o.total) + '\n';
-    s += 'Pickup: ' + (o.pickupAt ? fmtTime(o.pickupAt) : 'We will confirm') + '\n';
+    s += 'Pickup: ' + (o.asap ? 'As early as possible today' + (o.pickupAt ? ' (from ' + fmtTime(o.pickupAt) + ')' : '') : o.pickupAt ? fmtTime(o.pickupAt) : 'We will confirm') + '\n';
     s += 'Payment: ' + (o.pay === 'now' ? 'UPI (pay now)' : 'Pay at pickup') + '\n';
-    s += 'Name: ' + o.name + ' | Flat: ' + o.flat + ' | 📞 ' + o.phone;
+    s += 'Name: ' + (o.name || '-') + (o.flat ? ' | Flat: ' + o.flat : '') + (o.phone ? ' | 📞 ' + o.phone : '');
+    if (o.guest) s += '\n(No-login order via WhatsApp)';
     if (o.notes) s += '\nNotes: ' + o.notes;
     return s;
   }
@@ -82,6 +83,9 @@ var KKCore = (function () {
       if (table === 'menu') return [o.name, o.inStock ? 'IN STOCK' : 'TOMORROW', (o.variants || []).map(function (v) { return v.label + ' ₹' + v.price; }).join(', ')].join(' | ');
       if (table === 'reviews') return [o.stars + '★', o.itemName || '', o.name, o.text || ''].join(' | ');
       if (table === 'chats') return [o.phone, o.from, o.text].join(' | ');
+      if (table === 'materials') return [o.name, 'stock ' + (Math.round((o.stock || 0) * 100) / 100) + ' ' + (o.unit || ''), '₹' + (o.costPerUnit || 0) + '/' + (o.unit || 'unit')].join(' | ');
+      if (table === 'trash') return [o.table, o.label || o.objId, 'deleted ' + fmtTime(o.at)].join(' | ');
+      if (table === 'production') return [fmtTime(o.at), o.itemName, o.variant, 'x' + o.qty].join(' | ');
       if (table === 'expenses') return [o.date, o.category, o.qty || '', money(o.amount)].join(' | ');
     } catch (e) {}
     return '';
@@ -96,18 +100,30 @@ var KKCore = (function () {
       return m.sort(function (a, b) { return (a.sort || 0) - (b.sort || 0); });
     }
     function getSettings() { return store.get('settings', 'main') || { id: 'main', upiId: '', upiName: 'Keralam Kitchen', notifyEmail: '', emailAlerts: true, emailVisits: false }; }
-    function publicSettings() { var s = getSettings(); return { upiId: s.upiId || '', upiName: s.upiName || 'Keralam Kitchen' }; }
+    function publicSettings() { var s = getSettings(); return { upiId: s.upiId || '', upiName: s.upiName || 'Keralam Kitchen', upiQr: s.upiQr || '', logo: s.logo || '' }; }
+    function bump(k) { try { hooks.bump && hooks.bump(k); } catch (e) {} }
+    function rev(k) { try { return hooks.rev ? hooks.rev(k) : 0; } catch (e) { return 0; } }
+    function changed(phone) { bump('admin'); if (phone) bump('c' + phone); }
+    var TRASH_DAYS = 30;
+    function toTrash(table, obj, label) {
+      if (!obj) return null;
+      var t = { id: newId('T'), table: table, objId: String(obj.id), obj: obj, label: label || obj.name || obj.id, at: Date.now() };
+      store.put('trash', t); store.del(table, obj.id); bump('admin'); return t;
+    }
     function adminOnline() { return Date.now() - (+prop('ADMIN_SEEN') || 0) < 2 * MIN; }
     function isAdmin(d) {
       var a = (d && d.auth) || {}, pin = prop('ADMIN_PIN');
-      return !!pin && admins.indexOf(digits(a.phone)) >= 0 && String(a.pin) === String(pin);
+      if (!!pin && admins.indexOf(digits(a.phone)) >= 0 && String(a.pin) === String(pin)) return true;
+      var extra = (getSettings().admins || []).filter(function (x) { return digits(x.phone) === digits(a.phone) && x.pin && String(x.pin) === String(a.pin) && !x.disabled; });
+      return extra.length > 0;
     }
     function notify(t) { try { hooks.notify(t, getSettings()); } catch (e) {} }
     function img(data, name) { if (!data) return ''; if (/^(https?:|img\/)/.test(data)) return data; try { return hooks.saveImage(data, name) || ''; } catch (e) { return ''; } }
     function who(c) { return c ? ((c.name || 'Guest') + ' (' + (c.phone || '?') + (c.flat ? ', Flat ' + c.flat : '') + ')') : 'Guest'; }
     function log(type, c, text, alsoNotify) {
       var a = { id: newId('A'), at: Date.now(), type: type, phone: (c && c.phone) || '', name: (c && c.name) || '', text: String(text || '').slice(0, 300) };
-      try { store.put('activity', a); } catch (e) {}
+      try { (store.append || store.put)('activity', a); } catch (e) {}
+      bump('admin');
       if (alsoNotify) notify(alsoNotify === true ? text + '\n👤 ' + who(c) : alsoNotify);
       return a;
     }
@@ -123,7 +139,7 @@ var KKCore = (function () {
     }
     function ownOrder(d, c) { var o = store.get('orders', d.id); if (!o || o.phone !== c.phone) throw new Error('Order not found'); return o; }
     function upsertCustomer(c, source) {
-      var id = digits(c.phone);
+      var id = digits(c.phone); if (id.length !== 10) return null;
       var ex = store.get('customers', id) || { id: id, phone: id, firstAt: Date.now(), orders: 0, visits: 0, source: source || 'web' };
       if (c.name) ex.name = String(c.name).trim().slice(0, 60);
       if (c.flat) ex.flat = String(c.flat).trim().slice(0, 30);
@@ -218,8 +234,8 @@ var KKCore = (function () {
       placeOrder: function (d) {
         var admin = isAdmin(d), cu = admin ? null : custAuth(d, true);
         var c = d.customer || {};
-        if (!admin) c = { name: c.name || cu.name, flat: c.flat || cu.flat, phone: cu.phone };
-        validCustomer(c);
+        if (!admin) { c = { name: c.name || cu.name, flat: c.flat || cu.flat, phone: cu.phone }; validCustomer(c); }
+        else c = { name: String(c.name || '').trim() || 'Walk-in customer', flat: String(c.flat || '').trim(), phone: digits(c.phone) };
         if (d.id) { var ex = store.get('orders', d.id); if (ex && ex.phone === digits(c.phone)) return { order: ex }; }
         var custom = d.type === 'custom';
         if (custom && !String(d.customText || '').trim() && !d.customPhoto) throw new Error('Please describe the dish or add a photo');
@@ -227,14 +243,35 @@ var KKCore = (function () {
         var o = { id: (d.id && !store.get('orders', d.id)) ? d.id : newOrderId(), type: custom ? 'custom' : 'regular', name: String(c.name).trim(), flat: String(c.flat).trim(),
           phone: digits(c.phone), items: p.lines, total: p.total, notes: String(d.notes || '').slice(0, 500), pickupAt: +d.pickupAt || 0,
           pay: d.pay === 'now' ? 'now' : 'spot', payStatus: 'due', payMethod: '', status: 'placed', source: admin ? (d.source || 'phone') : 'web',
-          createdAt: now, history: [{ at: now, s: 'placed' }] };
+          createdAt: now, history: [{ at: now, s: 'placed' }], asap: !!d.asap };
+        if (admin) { o.contactedBy = String(d.contactedBy || '').slice(0, 40); o.status = d.status || 'accepted'; o.history[0].s = o.status; }
         if (custom) { o.customText = String(d.customText || '').slice(0, 1000); o.customPhoto = img(d.customPhoto, o.id + '-custom'); }
         store.put('orders', o);
-        var cr = upsertCustomer(c, o.source); cr.orders = (cr.orders || 0) + 1; cr.spent = (cr.spent || 0); store.put('customers', cr);
+        var cr = upsertCustomer(c, o.source); if (cr) { cr.orders = (cr.orders || 0) + 1; store.put('customers', cr); } else cr = c;
+        changed(o.phone);
         log(custom ? 'custom' : 'order', cr, (custom ? 'Custom request ' : 'Placed order ') + o.id + ' · ' + money(o.total) + (admin ? ' (entered by kitchen)' : ''),
           admin ? false : (custom ? '✨ CUSTOM REQUEST — please call the customer\n' : '🆕 NEW ORDER\n') + orderText(o));
         return { order: o };
       },
+
+      /* No-login order sent on WhatsApp — saved for the dashboard as a guest order */
+      guestOrder: function (d) {
+        var c = d.customer || {}, ph = digits(c.phone);
+        if (!String(c.name || '').trim() || ph.length !== 10) throw new Error('Name and 10-digit mobile number are required');
+        var ex = store.get('customers', ph); if (ex && ex.blocked) throw new Error('BLOCKED: Your account is on hold. Please contact Keralam Kitchen.');
+        if (d.id && store.get('orders', d.id)) return { order: store.get('orders', d.id) };
+        var p = priceItems(getMenu(), d.items), now = Date.now();
+        var o = { id: d.id || newOrderId(), type: 'regular', name: String(c.name).trim().slice(0, 60), flat: String(c.flat || '').trim().slice(0, 30), phone: ph,
+          items: p.lines, total: p.total, notes: String(d.notes || '').slice(0, 500), pickupAt: +d.pickupAt || 0, asap: !!d.asap, pay: 'spot', payStatus: 'due', payMethod: '',
+          status: 'placed', source: 'whatsapp', guest: true, sentTo: digits(d.sentTo), createdAt: now, history: [{ at: now, s: 'placed' }] };
+        store.put('orders', o);
+        var cr = upsertCustomer({ name: o.name, flat: o.flat, phone: ph }, 'whatsapp'); if (cr) { cr.orders = (cr.orders || 0) + 1; store.put('customers', cr); }
+        changed(ph);
+        log('order', cr || o, 'WhatsApp order (no login) ' + o.id + ' · ' + money(o.total) + ' → sent to ' + o.sentTo, '🆕 NEW WHATSAPP ORDER (no login)\n' + orderText(o));
+        return { order: o };
+      },
+      /* Very fast "has anything changed?" check — no sheet reads */
+      ping: function (d) { var ph = digits((d.cauth || {}).phone); return { rev: ph ? rev('c' + ph) : 0, adminOnline: adminOnline() }; },
 
       myOrders: function (d) {
         var c = custAuth(d, true);
@@ -247,7 +284,7 @@ var KKCore = (function () {
         var c = custAuth(d, true), o = ownOrder(d, c);
         if (!canChange(o)) throw new Error('This order can no longer be cancelled. Please contact support.');
         setStatus(o, 'cancelled', 'customer'); o.cancelReason = String(d.reason || '').slice(0, 300);
-        store.put('orders', o);
+        store.put('orders', o); changed(c.phone);
         log('cancel', c, 'Cancelled order ' + o.id + (o.cancelReason ? ' — ' + o.cancelReason : ''), '❌ ORDER CANCELLED by customer\n' + orderText(o));
         return { order: o };
       },
@@ -260,7 +297,7 @@ var KKCore = (function () {
         if (d.pickupAt) o.pickupAt = +d.pickupAt;
         if (d.pay) o.pay = d.pay === 'now' ? 'now' : 'spot';
         o.modifiedAt = Date.now(); (o.history = o.history || []).push({ at: Date.now(), s: 'modified', by: 'customer' });
-        store.put('orders', o);
+        store.put('orders', o); changed(c.phone);
         log('modify', c, 'Modified order ' + o.id + ' · ' + money(o.total), '✏️ ORDER MODIFIED by customer\n' + orderText(o));
         return { order: o };
       },
@@ -287,7 +324,7 @@ var KKCore = (function () {
         var c = custAuth(d, true);
         var m = { id: newId('M'), phone: c.phone, name: c.name, from: 'customer', text: String(d.text || '').slice(0, 1000), at: Date.now() };
         if (!m.text.trim()) throw new Error('Empty message');
-        store.put('chats', m);
+        (store.append || store.put)('chats', m); changed(c.phone);
         log('chat', c, 'Chat: ' + m.text.slice(0, 120), '💬 SUPPORT CHAT from ' + who(c) + '\n' + m.text + '\n(Reply from the admin dashboard → Chat)');
         return A.chatList(d);
       },
@@ -303,11 +340,16 @@ var KKCore = (function () {
           '🔐 ADMIN DASHBOARD LOGIN\nNumber: ' + digits(d.auth.phone) + (d.device ? '\nDevice: ' + d.device : '') + '\nIf this was not you, change ADMIN_PIN in Apps Script now.');
         return { ok: true };
       },
+      adminPoll: function () { hooks.setProp('ADMIN_SEEN', Date.now()); return { rev: rev('admin') }; },
       adminData: function () {
         hooks.setProp('ADMIN_SEEN', Date.now());
+        var act = store.recent ? store.recent('activity', 700) : store.all('activity');
+        var st = getSettings(); st = JSON.parse(JSON.stringify(st)); st.hasAiKey = !!prop('GEMINI_KEY');
         return { orders: store.all('orders').sort(function (a, b) { return b.createdAt - a.createdAt; }), menu: getMenu(),
           customers: store.all('customers'), reviews: store.all('reviews'), chats: store.all('chats'), expenses: store.all('expenses'),
-          activity: store.all('activity').sort(function (a, b) { return b.at - a.at; }).slice(0, 600), settings: getSettings(), now: Date.now() };
+          materials: store.all('materials'), production: (store.recent ? store.recent('production', 300) : store.all('production')),
+          trash: store.all('trash').map(function (t) { return { id: t.id, table: t.table, objId: t.objId, label: t.label, at: t.at }; }),
+          activity: act.sort(function (a, b) { return b.at - a.at; }).slice(0, 700), settings: st, rev: rev('admin'), now: Date.now() };
       },
       adminUpdateOrder: function (d) {
         var o = store.get('orders', d.id); if (!o) throw new Error('Order not found');
@@ -321,8 +363,10 @@ var KKCore = (function () {
           if (p.status === 'collected') o.payStatus = 'paid';
           if (p.status !== 'placed') o.reminded = true;
         }
+        ['source', 'contactedBy', 'name', 'flat'].forEach(function (k) { if (p[k] !== undefined) o[k] = p[k]; });
+        if (p.phone !== undefined) o.phone = digits(p.phone);
         o.updatedAt = Date.now();
-        store.put('orders', o);
+        store.put('orders', o); changed(o.phone);
         if (p.status) log('admin_status', { phone: o.phone, name: o.name }, 'Kitchen marked ' + o.id + ' as ' + p.status);
         return { order: o };
       },
@@ -335,14 +379,52 @@ var KKCore = (function () {
         if (it.img && /^data:/.test(it.img)) it.img = img(it.img, 'item-' + it.id);
         store.put('menu', it); return { item: it };
       },
-      adminDeleteItem: function (d) { store.del('menu', d.id); return { ok: true }; },
+      adminDeleteItem: function (d) { return { trash: toTrash('menu', store.get('menu', d.id)) }; },
+      adminDeleteOrder: function (d) { var o = store.get('orders', d.id); if (!o) throw new Error('Order not found'); return { trash: toTrash('orders', o, o.id + ' · ' + o.name + ' · ' + money(o.total)) }; },
+      adminRestore: function (d) {
+        var t = store.get('trash', d.id); if (!t) throw new Error('Already restored or removed');
+        if (t.table === 'customers' && store.get('customers', t.objId)) throw new Error('A customer with this number exists again — delete it first');
+        store.put(t.table, t.obj); store.del('trash', t.id); bump('admin'); return { table: t.table, obj: t.obj };
+      },
+      adminPurge: function (d) { (d.ids || [d.id]).forEach(function (id) { store.del('trash', id); }); bump('admin'); return { ok: true }; },
+      adminSaveMaterial: function (d) {
+        var m = d.material || {}; if (!String(m.name || '').trim()) throw new Error('Name required');
+        m.id = m.id || newId('RM'); m.name = String(m.name).trim(); m.unit = m.unit || 'kg'; m.stock = +m.stock || 0; m.costPerUnit = +m.costPerUnit || 0; m.low = +m.low || 0;
+        store.put('materials', m); bump('admin'); return { material: m };
+      },
+      adminDeleteMaterial: function (d) { return { trash: toTrash('materials', store.get('materials', d.id)) }; },
+      /* Record a batch made → raw materials are taken out of stock using the dish recipe */
+      adminProduce: function (d) {
+        var item = store.get('menu', d.itemId); if (!item) throw new Error('Dish not found');
+        var v = item.variants[+d.v || 0]; if (!v) throw new Error('Size not found');
+        var qty = +d.qty || 0; if (qty <= 0) throw new Error('Enter how many');
+        var used = [];
+        (v.recipe || []).forEach(function (r) {
+          var m = store.get('materials', r.mat); if (!m) return;
+          var q = (+r.qty || 0) * qty; m.stock = Math.round(((+m.stock || 0) - q) * 1000) / 1000; store.put('materials', m);
+          used.push({ mat: m.id, name: m.name, qty: q, unit: m.unit });
+        });
+        var pr = { id: newId('P'), at: Date.now(), itemId: item.id, itemName: item.name, v: +d.v || 0, variant: v.label, qty: qty, used: used, note: String(d.note || '') };
+        store.put('production', pr); bump('admin');
+        return { production: pr, materials: store.all('materials') };
+      },
+      adminAI: function (d) {
+        var text = String(d.text || '').trim(); if (!text) throw new Error('Write something first');
+        if (!hooks.ai) throw new Error('AI is only available on the live site');
+        var how = { fix: 'Fix the spelling and grammar. Keep the meaning, tone and language. Keep it short.',
+          polite: 'Rewrite it as a warm, polite and clear message from a small homemade food kitchen to its customer. Keep it short. Emojis are fine but few.',
+          menu: 'Rewrite it as an appetising, short food menu description (max 2 sentences). Fix spelling and grammar.' }[d.mode] || 'Fix the spelling and grammar.';
+        return { text: hooks.ai(how + ' Reply with ONLY the rewritten text, nothing else.\n\nText:\n' + text, prop('GEMINI_KEY')) };
+      },
       adminSaveCustomer: function (d) {
-        var x = d.customer || {}; validCustomer(x);
-        var ph = digits(x.phone), old = d.originalPhone ? digits(d.originalPhone) : ph;
+        var x = d.customer || {};
+        var ph = digits(x.phone), old = d.originalPhone ? String(d.originalPhone) : ph;
+        if (ph && ph.length !== 10) throw new Error('Mobile number should be 10 digits (or leave it empty)');
+        if (!ph) ph = (old && !/^\d{10}$/.test(old)) ? old : newId('C');
         if (x.pin && !validPin(x.pin)) throw new Error('PIN must be 4 to 6 digits');
         if (old !== ph && store.get('customers', ph)) throw new Error('Another customer already uses ' + ph);
         var c = store.get('customers', old) || { firstAt: Date.now(), orders: 0, visits: 0, source: x.source || 'phone' };
-        c.id = ph; c.phone = ph; c.name = String(x.name).trim(); c.flat = String(x.flat).trim();
+        c.id = ph; c.phone = /^\d{10}$/.test(ph) ? ph : ''; c.name = String(x.name || '').trim() || 'Customer'; c.flat = String(x.flat || '').trim();
         if (x.note !== undefined) c.note = x.note;
         if (x.pin !== undefined) c.pin = x.pin ? String(x.pin) : '';
         if (x.blocked !== undefined) c.blocked = !!x.blocked;
@@ -353,7 +435,7 @@ var KKCore = (function () {
         log('admin_customer', c, 'Kitchen saved customer details');
         return { customer: c };
       },
-      adminDeleteCustomer: function (d) { var c = store.get('customers', digits(d.phone)); store.del('customers', digits(d.phone)); log('admin_customer', c, 'Kitchen deleted this customer'); return { ok: true }; },
+      adminDeleteCustomer: function (d) { var c = store.get('customers', String(d.phone)); if (!c) throw new Error('Customer not found'); var t = toTrash('customers', c, c.name + ' · ' + (c.phone || '')); log('admin_customer', c, 'Kitchen deleted this customer (in trash for 30 days)'); return { trash: t }; },
       adminBlockCustomer: function (d) {
         var c = store.get('customers', digits(d.phone)); if (!c) throw new Error('Customer not found');
         c.blocked = !!d.blocked; c.blockReason = String(d.reason || ''); store.put('customers', c);
@@ -364,19 +446,32 @@ var KKCore = (function () {
         var s = getSettings(), x = d.settings || {};
         ['upiId', 'upiName', 'notifyEmail'].forEach(function (k) { if (x[k] !== undefined) s[k] = String(x[k]).trim(); });
         ['emailAlerts', 'emailVisits'].forEach(function (k) { if (x[k] !== undefined) s[k] = !!x[k]; });
+        ['staff', 'expenseCats', 'sources', 'admins', 'labourRate'].forEach(function (k) { if (x[k] !== undefined) s[k] = x[k]; });
+        if (x.upiQr !== undefined) s.upiQr = x.upiQr ? img(x.upiQr, 'upi-qr-' + Date.now()) : '';
+        if (x.logo !== undefined) s.logo = x.logo ? img(x.logo, 'logo-' + Date.now()) : '';
+        if (x.geminiKey !== undefined && hooks.setProp) hooks.setProp('GEMINI_KEY', String(x.geminiKey).trim());
+        delete s.geminiKey; delete s.hasAiKey;
+        (s.admins || []).forEach(function (a) { a.phone = digits(a.phone); if (a.pin && !validPin(a.pin)) throw new Error('Admin PIN must be 4 to 6 digits'); });
+        bump('admin');
         s.id = 'main'; store.put('settings', s); return { settings: s };
       },
       adminTestAlert: function () { notify('✅ Test alert from Keralam Kitchen dashboard — alerts are working!'); return { ok: true }; },
       adminChatReply: function (d) {
-        var m = { id: newId('M'), phone: digits(d.phone), name: 'Keralam Kitchen', from: 'admin', text: String(d.text || '').slice(0, 1000), at: Date.now() };
-        store.put('chats', m); return { message: m };
+        var m = { id: d.mid || newId('M'), phone: digits(d.phone), name: 'Keralam Kitchen', from: 'admin', text: String(d.text || '').slice(0, 1000), at: Date.now() };
+        (store.append || store.put)('chats', m); changed(m.phone); return { message: m };
       },
       adminSaveExpense: function (d) {
         var e = d.expense || {}; e.id = e.id || newId('E'); e.amount = +e.amount || 0;
         if (!e.date) throw new Error('Date required');
-        store.put('expenses', e); return { expense: e };
+        var old = store.get('expenses', e.id);
+        // raw-material purchase → add to stock and update the cost per unit
+        if (e.mat && +e.mqty > 0 && !old) {
+          var m = store.get('materials', e.mat);
+          if (m) { m.costPerUnit = Math.round(e.amount / +e.mqty * 100) / 100; m.stock = Math.round(((+m.stock || 0) + +e.mqty) * 1000) / 1000; m.lastBuy = e.date; store.put('materials', m); e.category = e.category || m.name; }
+        }
+        store.put('expenses', e); bump('admin'); return { expense: e, materials: store.all('materials') };
       },
-      adminDeleteExpense: function (d) { store.del('expenses', d.id); return { ok: true }; },
+      adminDeleteExpense: function (d) { var e = store.get('expenses', d.id); return { trash: toTrash('expenses', e, (e && (e.category + ' · ' + money(e.amount))) || d.id) }; },
       adminHideReview: function (d) { var r = store.get('reviews', d.id); if (r) { r.hidden = !r.hidden; store.put('reviews', r); } return { review: r }; }
     };
 
@@ -386,6 +481,7 @@ var KKCore = (function () {
         notify('⏰ REMINDER: order waiting 15+ min without acceptance\n' + orderText(o));
         o.reminded = true; store.put('orders', o);
       });
+      store.all('trash').forEach(function (t) { if (Date.now() - t.at > TRASH_DAYS * 864e5) store.del('trash', t.id); });
       return stale.length;
     }
 

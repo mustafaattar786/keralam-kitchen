@@ -23,6 +23,8 @@ Object.assign(I18N.en, {
   login: 'Login', signup: 'Create account', forgot: 'Forgot PIN?', have_acc: 'Already have an account? Login', no_acc: 'New here? Create account',
   my_acc: 'My account', logout: 'Logout', edit_profile: 'Edit profile', new_pin: 'New PIN (leave empty to keep)', save: 'Save',
   profile_photo: 'Profile photo (optional)', remove_photo: 'Remove photo', notif_on: 'Notifications are ON', notif_btn: 'Notify me about my orders',
+  login_to_order: 'Log in or create an account to place your order', wa_order: 'Order on WhatsApp without an account', wa_order_s: 'No account needed — your order goes straight to our WhatsApp. Name and number are required.',
+  send_to: 'Send my order to', login_needed: 'Please log in to see this', asap: 'As early as possible today', call_us: 'Call us',
   sorry_t: 'Sorry to see you go…', sorry_s: 'Your order is cancelled. We hope to cook for you again soon! 🌿', exit_back: 'Press back again to exit'
 });
 const msgOf = e => String((e && e.message) || e).replace(/^[A-Z]+: /, '');
@@ -43,7 +45,7 @@ function doLogout(expired) {
   if (S.auth && !expired) capi('track', { type: 'logout', text: 'Logged out' }).catch(() => {});
   S.auth = null; S.me = null; S.orders = []; S.chat = [];
   lsSet('kk_auth', null); lsSet('kk_me', null); lsSet('kk_orders', []);
-  closeSheet(true); renderAuth('login', expired ? 'Please log in again.' : '');
+  closeSheet(true); S.tab = 'menu'; render(); if (expired) openAuth('login', 'Please log in again.');
 }
 const avatar = (c, size = 36) => c && c.photo
   ? `<img class="avatar" src="${esc(c.photo)}" alt="" style="width:${size}px;height:${size}px">`
@@ -166,17 +168,17 @@ function render() {
   app.innerHTML = `
   ${DEMO ? '<div class="demo">Demo mode — orders stay on this device until the Google Sheet backend is connected.</div>' : ''}
   <header class="top"><div class="wrap">
-    <button class="logo logo-btn" data-a="home" aria-label="Menu">🌿 Keralam Kitchen<small>${esc(t('tagline'))}</small></button>
+    <button class="logo logo-btn" data-a="home" aria-label="Menu">${(window.KK_SET || {}).logo ? `<img class="logo-img" src="${esc(KK_SET.logo)}" alt="">` : '🌿'} <span>Keralam Kitchen<small>${esc(t('tagline'))}</small></span></button>
     <div class="sp"></div>
-    <button class="iconbtn" data-a="tab" data-t="help" title="${esc(S.adminOnline ? t('admin_on') : t('admin_off'))}"><span class="dot ${S.adminOnline ? 'on' : ''}"></span></button>
-    <button class="iconbtn" data-a="openLang">🌐 ${esc((LANGS.find(l => l[0] === S.lang) || [, 'EN'])[1])}</button>
-    ${S.me ? `<button class="iconbtn avbtn" data-a="tab" data-t="info" aria-label="${esc(t('my_acc'))}">${avatar(S.me, 32)}</button>` : ''}
+    <a class="iconbtn" href="${telLink(CFG.PHONES[0])}" aria-label="${esc(t('call_us'))}">${ic('phone', 18)}</a>
+    <button class="iconbtn" data-a="openLang" aria-label="Language">${ic('globe', 18)} ${esc((LANGS.find(l => l[0] === S.lang) || [, 'EN'])[1])}</button>
+    ${S.me ? `<button class="iconbtn avbtn" data-a="tab" data-t="info" aria-label="${esc(t('my_acc'))}">${avatar(S.me, 32)}</button>` : `<button class="iconbtn" data-a="login">${ic('user', 18)} ${esc(t('login'))}</button>`}
   </div></header>
   <main class="wrap" id="main">${renderTab()}</main>
   ${S.tab === 'menu' && S.cart.length ? `<div class="cartbar"><button class="btn gold" data-a="openCart"><span>🛒 ${cartCount()} · ${S.modifying ? '✏️ ' + esc(S.modifying) + ' · ' : ''}${esc(t('go_cart'))}</span><span>${money(cartTotal())} ›</span></button></div>` : ''}
   <nav class="nav">
-    ${[['menu', '🍽️', t('menu')], ['orders', '🧾', t('orders')], ['help', '💬', t('help')], ['info', 'ℹ️', t('info')]].map(([k, i, l]) =>
-      `<button class="${S.tab === k ? 'on' : ''}" data-a="tab" data-t="${k}"><b>${i}</b>${esc(l)}${k === 'orders' && orderBadge ? `<span class="badge">${orderBadge}</span>` : ''}</button>`).join('')}
+    ${[['menu', 'menu', t('menu')], ['orders', 'receipt', t('orders')], ['help', 'chat', t('help')], ['info', 'user', t('info')]].map(([k, i, l]) =>
+      `<button class="${S.tab === k ? 'on' : ''}" data-a="tab" data-t="${k}"><b>${ic(i, 22)}</b>${esc(l)}${k === 'orders' && orderBadge ? `<span class="badge">${orderBadge}</span>` : ''}</button>`).join('')}
   </nav>`;
   if (S.tab === 'help') scrollChat();
 }
@@ -241,7 +243,7 @@ function renderMenu() {
     <button class="btn sm" data-a="openReview">${esc(t('write_review'))}</button></div>
     ${S.reviews.slice(0, 12).map(reviewHtml).join('') || '<p class="muted small">Be the first to review! 😊</p>'}
   </div>
-  <p class="small" style="text-align:center">${CFG.PHONES.map(p => `<a class="phone-link" href="${waLink(p, 'Hi Keralam Kitchen 🌿')}" target="_blank" rel="noopener">🟢 WhatsApp ${p}</a>`).join(' ')}</p>`;
+  <div class="contact-row">${CFG.PHONES.map(p => `<div class="contact-chip"><b>${p}</b><a class="btn sm" href="${telLink(p)}">${ic('phone', 16)} ${esc(t('call'))}</a><a class="btn sm wa" href="${waLink(p, 'Hi Keralam Kitchen 🌿')}" target="_blank" rel="noopener">${ic('wa', 16)} WhatsApp</a></div>`).join('')}</div>`;
 }
 function reviewHtml(r) {
   return `<div class="review"><div class="row between"><b>${esc(r.name)}</b><span class="stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</span></div>
@@ -250,6 +252,7 @@ function reviewHtml(r) {
 }
 function detailFields(p) {
   const pr = (p === 'cart' && S.draft) || S.profile;
+  if (!S.me && (p === 'cart' || p === 'c' || p === 'r')) return '';
   if (S.me) return `<div class="me-line">${avatar(S.me, 34)}<div style="flex:1"><b>${esc(S.me.name)}</b><div class="small muted">Flat ${esc(S.me.flat)} · ${esc(S.me.phone)}</div></div><button class="btn sm ghost" data-a="editAccount">✏️</button></div>`;
   if (pr.name && pr.flat && pr.phone && p !== 'cart' && !S.editingProfile) return `<p class="small muted" style="margin:10px 0 0">👤 ${esc(pr.name)} · ${esc(pr.flat)} · ${esc(pr.phone)} <a href="#" data-a="editProfile">✏️</a></p>`;
   return `
@@ -284,9 +287,10 @@ function closeSheet(fromPop) {
 function renderCart() {
   if (!S.cart.length) return openSheet(`<h2>${esc(t('cart'))}</h2><p class="muted">${esc(t('empty_cart'))}</p><button class="btn big" data-a="close">OK</button>`);
   const slots = pickupSlots(S.cart);
+  const earliest = earliestPickup(S.cart), asapOk = new Date(earliest).toDateString() === new Date().toDateString() && new Date(earliest).getHours() < CFG.CLOSE_HOUR;
   const groups = {}; slots.forEach(s => { const k = dayLabel(s); (groups[k] = groups[k] || []).push(s); });
-  const prevPick = $('#pickup') && $('#pickup').value;
-  const prevNotes = $('#notes') ? $('#notes').value : null;
+  const prevPick = ($('#pickup') && $('#pickup').value) || (S.cartDraft && S.cartDraft.pick) || '';
+  const prevNotes = $('#notes') ? $('#notes').value : S.cartDraft ? S.cartDraft.notes : null;
   if ($('#cartName')) S.draft = readDetails('cart');
   const mod = S.modifying && S.orders.find(o => o.id === S.modifying);
   const pay = (mod && mod.pay) || lsGet('kk_pay', 'spot');
@@ -301,26 +305,31 @@ function renderCart() {
         <b style="min-width:52px;text-align:right">${money(l.amount)}</b></div>`; }).join('')}
     <div class="total"><span>${esc(t('total'))}</span><span>${money(cartTotal())}</span></div>
     <label class="f">🕑 ${esc(t('pickup'))}</label>
-    <select class="in" id="pickup">${Object.keys(groups).map(g => `<optgroup label="${esc(g)}">${groups[g].map(s => `<option value="${s}" ${String(s) === prevPick || (mod && mod.pickupAt === s) ? 'selected' : ''}>${esc(g)} · ${fmtClock(s)}</option>`).join('')}</optgroup>`).join('')}</select>
+    <select class="in" id="pickup">${asapOk ? `<option value="asap:${earliest}" ${!prevPick || prevPick.startsWith('asap') ? 'selected' : ''}>⚡ ${esc(t('asap'))} (${esc(t('today'))} · ${fmtClock(earliest)}+)</option>` : ''}${Object.keys(groups).map(g => `<optgroup label="${esc(g)}">${groups[g].map(s => `<option value="${s}" ${String(s) === prevPick || (mod && mod.pickupAt === s) ? 'selected' : ''}>${esc(g)} · ${fmtClock(s)}</option>`).join('')}</optgroup>`).join('')}</select>
     <label class="f">📝 ${esc(t('notes'))}</label>
     <textarea class="in" id="notes" placeholder="${esc(t('notes_ph'))}">${esc(prevNotes != null ? prevNotes : (mod && mod.notes) || '')}</textarea>
-    <h3 style="margin-top:16px">👤 ${esc(t('details'))}</h3>
-    ${detailFields('cart')}
+    ${S.me ? `<h3 style="margin-top:16px">👤 ${esc(t('details'))}</h3>${detailFields('cart')}` : ''}
     <h3 style="margin-top:16px">💳</h3>
     ${upiId() ? `<label class="radio"><input type="radio" name="pay" value="now" ${pay === 'now' ? 'checked' : ''}> ${esc(t('pay_now'))}</label>` : ''}
     <label class="radio"><input type="radio" name="pay" value="spot" ${pay !== 'now' || !upiId() ? 'checked' : ''}> ${esc(t('pay_spot'))}</label>
     <label class="check"><input type="checkbox" id="agree" ${S.agreed ? 'checked' : ''}><span>${esc(t('agree'))} — <a href="#" data-a="showDisclaimer">${esc(t('disclaimer_t'))}</a></span></label>
+    ${S.auth ? '' : `<p class="small muted" style="margin:6px 0">${ic('lock', 14)} ${esc(t('login_to_order'))}</p>`}
     <button class="btn primary big" data-a="placeOrder">✓ ${esc(t('confirm'))} · ${money(cartTotal())}</button>
+    ${S.modifying ? '' : `<div class="or-line"><span>or</span></div>
+    <button class="btn wa big" data-a="waOrder">${ic('wa', 20)} ${esc(t('wa_order'))}</button>`}
     <p class="note">${esc(t('lock_note'))}</p>`);
 }
 
+function pickupVal() { const v = ($('#pickup') || {}).value || ''; return v.startsWith('asap:') ? { pickupAt: +v.slice(5), asap: true } : { pickupAt: +v, asap: false }; }
 async function placeOrder(btn) {
+  if (!$('#agree').checked) return toast('✓ ' + t('agree'));
+  S.cartDraft = { pick: $('#pickup').value, notes: $('#notes').value };
+  if (!S.auth) return openAuth(S.profile.phone ? 'login' : 'signup', t('login_to_order'), () => renderCart());
   const d = readDetails('cart');
   if (!validDetails(d)) return toast(t('required'));
-  if (!$('#agree').checked) return toast('✓ ' + t('agree'));
   S.agreed = true; lsSet('kk_agreed', true); saveProfile(d);
   const pay = ($('input[name=pay]:checked') || {}).value || 'spot'; lsSet('kk_pay', pay);
-  const payload = { items: S.cart.map(c => ({ id: c.id, v: c.v, addons: c.addons, qty: c.qty })), notes: $('#notes').value.trim(), pickupAt: +$('#pickup').value, pay, customer: d };
+  const payload = { items: S.cart.map(c => ({ id: c.id, v: c.v, addons: c.addons, qty: c.qty })), notes: $('#notes').value.trim(), ...pickupVal(), pay, customer: d };
   btn.disabled = true; btn.textContent = '⏳ …';
   try {
     let order;
@@ -366,8 +375,9 @@ function orderActions(o) {
   const can = KKCore.canChange(o) && !o.queued;
   const wa = waLink(CFG.WHATSAPP_ORDERS_TO, KKCore.orderText(o));
   return `
-  <a class="btn wa big" href="${wa}" target="_blank" rel="noopener">🟢 ${esc(t('send_wa'))}</a>
+  <div class="row" style="gap:8px"><a class="btn wa big" style="flex:2" href="${wa}" target="_blank" rel="noopener">${ic('wa', 20)} ${esc(t('send_wa'))}</a><a class="btn big" style="flex:1" href="${telLink(CFG.PHONES[0])}">${ic('phone', 18)} ${esc(t('call'))}</a></div>
   ${o.pay === 'now' && upiId() && o.total && o.status !== 'cancelled' && o.payStatus !== 'paid' ? `<a class="btn gold big" style="margin-top:10px" href="${upiLink(o.total, o.id)}">💳 ${esc(t('pay_upi'))} · ${money(o.total)}</a>` : ''}
+  ${o.pay === 'now' && (window.KK_SET || {}).upiQr && o.status !== 'cancelled' && o.payStatus !== 'paid' ? `<div class="qr-box"><img src="${esc(KK_SET.upiQr)}" alt="UPI QR code"><small>Scan to pay ${money(o.total)}</small></div>` : ''}
   ${['cancelled', 'collected'].includes(o.status) || o.type === 'custom' ? '' : `
   <div class="row" style="margin-top:10px">
     <button class="btn danger" style="flex:1" data-a="cancelOrder" data-id="${o.id}" ${can ? '' : 'disabled'}>✕ ${esc(t('cancel'))}</button>
@@ -392,7 +402,9 @@ function showConfirmation(o) {
     <button class="btn ghost big" style="margin-top:10px" data-a="goOrders">🧾 ${esc(t('orders'))}</button>`, true);
   tickTimers();
 }
+function loginCard() { return `<div class="card" style="text-align:center"><div class="big-ic">${ic('lock', 40)}</div><p>${esc(t('login_needed'))}</p><button class="btn primary big" data-a="login">${esc(t('login'))} / ${esc(t('signup'))}</button></div>`; }
 function renderOrders() {
+  if (!S.auth) return loginCard();
   if (!S.orders.length) return `<div class="card" style="text-align:center"><div style="font-size:48px">🧾</div><p>${esc(t('empty_orders'))}</p><button class="btn primary" data-a="tab" data-t="menu">🍽️ ${esc(t('menu'))}</button></div>`;
   const list = S.orders.length ? S.orders.map(o => {
     const reviewAt = KKCore.reviewOpensAt(o);
@@ -448,13 +460,13 @@ function renderHelp() {
     ${S.auth ? `
       <div class="chat" id="chat">${S.chat.map(m => `<div class="msg ${m.from === 'customer' ? 'me' : 'them'}">${esc(m.text)}<small>${fmtClock(m.at)}</small></div>`).join('') || '<p class="muted small">👋 Hi! How can we help you?</p>'}</div>
       <div class="row" style="margin-top:8px"><input class="in" id="chatIn" style="flex:1" placeholder="${esc(t('chat_ph'))}"><button class="btn primary" data-a="chatSend">➤</button></div>`
-    : `${detailFields('h')}<button class="btn primary big" style="margin-top:12px" data-a="saveHelpProfile">${esc(t('done'))}</button>`}
+    : `<p class="muted">${esc(t('login_needed'))}</p><button class="btn primary big" data-a="login">${esc(t('login'))} / ${esc(t('signup'))}</button>`}
   </div>
   <div class="card">
     <h3>📞 ${esc(t('contact'))}</h3>
     ${CFG.PHONES.map(p => `<div class="row" style="margin:8px 0"><b style="flex:1;font-size:18px">${p}</b>
-      <a class="btn sm" href="${telLink(p)}">📞 ${esc(t('call'))}</a>
-      <a class="btn sm wa" href="${waLink(p, 'Hi Keralam Kitchen 🌿')}" target="_blank" rel="noopener">WhatsApp</a></div>`).join('')}
+      <a class="btn sm" href="${telLink(p)}">${ic('phone', 16)} ${esc(t('call'))}</a>
+      <a class="btn sm wa" href="${waLink(p, 'Hi Keralam Kitchen 🌿')}" target="_blank" rel="noopener">${ic('wa', 16)} WhatsApp</a></div>`).join('')}
     <p class="small muted" style="margin:6px 0 0">Tap a number's WhatsApp button to chat with us directly.</p>
   </div>`;
 }
@@ -486,6 +498,7 @@ function renderInfo() {
 /* ---------------- Reviews ---------------- */
 let reviewState = { stars: 5, photo: '', orderId: '' };
 function openReview(orderId) {
+  if (!S.auth) return openAuth('login', t('login_needed'), () => openReview(orderId));
   reviewState = { stars: 5, photo: '', orderId: orderId || '' };
   const o = orderId && S.orders.find(x => x.id === orderId);
   const itemOpts = o ? (o.items || []).map(l => menuItem(l.id)).filter(Boolean) : S.menu;
@@ -502,7 +515,7 @@ function openReview(orderId) {
 }
 async function submitReview(btn) {
   const d = readDetails('r');
-  if (!d.name || KKCore.digits(d.phone).length !== 10) return toast(t('required'));
+  if (!d.name) return toast(t('required'));
   if (d.flat) saveProfile({ ...S.profile, ...d });
   btn.disabled = true;
   try {
@@ -516,6 +529,7 @@ let customPhoto = '';
 async function sendCustom(btn) {
   const text = $('#customText').value.trim();
   if (!text && !customPhoto) return toast(t('custom_ph'));
+  if (!S.auth) return openAuth('login', t('login_to_order'));
   const d = readDetails('c'); if (!validDetails(d)) return toast(t('required'));
   saveProfile(d);
   btn.disabled = true;
@@ -539,7 +553,7 @@ async function loadMenu() {
     S.menu = r.menu; S.reviews = r.reviews; S.adminOnline = r.adminOnline; setSettings(r.settings);
     lsSet('kk_menu', S.menu); lsSet('kk_reviews', S.reviews);
     S.cart = S.cart.filter(c => menuItem(c.id)); saveCart();
-    if (!$('#overlay') && S.lang && S.auth && !document.activeElement.matches('input,textarea')) render();
+    if (!$('#overlay') && S.lang && !$('.lang-screen') && !document.activeElement.matches('input,textarea')) render();
   } catch (e) {}
 }
 
@@ -550,8 +564,8 @@ const ACTIONS = {
     const first = !S.lang;
     S.lang = S.pickLang || S.lang || 'en'; lsSet('kk_lang', S.lang); S.pickLang = null;
     applyDir();
-    if (first) { if (S.auth) render(); else renderAuth(S.profile.phone ? 'login' : 'signup'); await showLoader(3000); }
-    else if (S.auth) render(); else renderAuth('login');
+    S.tab = 'menu'; render();
+    if (first) await showLoader(1400);
   },
   home: () => { closeSheet(); if (S.tab !== 'menu') go('menu'); window.scrollTo({ top: 0, behavior: 'smooth' }); },
   openLang: () => { closeSheet(); S.pickLang = S.lang; renderLang(true); },
@@ -591,9 +605,10 @@ const ACTIONS = {
   saveHelpProfile: () => { const d = readDetails('h'); if (!validDetails(d)) return toast(t('required')); saveProfile(d); render(); loadChat(); },
   chatSend: async el => {
     const inp = $('#chatIn'), text = inp.value.trim(); if (!text) return;
-    el.disabled = true;
-    try { const r = await capi('chatSend', { text }); S.chat = r.messages; S.adminOnline = r.adminOnline; render(); }
-    catch (e) { toast(e.offline ? t('offline') : msgOf(e)); el.disabled = false; }
+    const tmp = { id: 'tmp' + Date.now(), from: 'customer', text, at: Date.now(), pending: true };
+    S.chat.push(tmp); inp.value = ''; render(); setTimeout(() => { const i = $('#chatIn'); if (i) i.focus(); }, 0);
+    try { const r = await capi('chatSend', { text }); S.chat = r.messages; S.adminOnline = r.adminOnline; S.rev = 0; if (S.tab === 'help') render(); }
+    catch (e) { S.chat = S.chat.filter(m => m !== tmp); render(); const i = $('#chatIn'); if (i) i.value = text; toast(e.offline ? t('offline') : msgOf(e)); }
   },
   openReview: el => openReview(el.dataset.order),
   star: el => { reviewState.stars = +el.dataset.i; $$('#rvStars button').forEach((b, i) => b.classList.toggle('on', i < reviewState.stars)); },
@@ -609,7 +624,10 @@ const ACTIONS = {
   },
   logout: () => { if (confirm(t('logout') + '?')) doLogout(); },
   editAccount: () => openAccount(),
-  authMode: el => renderAuth(el.dataset.m),
+  authMode: el => openAuth(el.dataset.m),
+  login: () => openAuth(S.profile.phone ? 'login' : 'signup'),
+  waOrder: () => waOrderSheet(),
+  waSend: el => waSend(el),
   authGo: el => authGo(el),
   forgot: el => forgotPin(el),
   saveAccount: el => saveAccount(el),
@@ -644,7 +662,7 @@ window.addEventListener('popstate', e => {
   if (S._skipPop) { S._skipPop = false; return; }
   const st = e.state || {};
   if ($('#overlay')) { closeSheet(true); return; }
-  if (!S.lang || !S.auth) { history.pushState({ tab: 'menu' }, ''); return; }
+  if (!S.lang) { history.pushState({ tab: 'menu' }, ''); return; }
   if ($('.lang-screen')) { history.pushState({ tab: S.tab }, ''); render(); return; }
   if (st.root) {
     if (S.tab !== 'menu') { history.pushState({ tab: 'menu' }, ''); go('menu', true); return; }
@@ -656,14 +674,15 @@ window.addEventListener('popstate', e => {
 
 /* ---------------- Login / signup ---------------- */
 let authPhoto = '';
-function renderAuth(mode = 'login', msg = '') {
-  applyDir();
+function renderAuth(mode, msg) { openAuth(mode, msg); }
+function openAuth(mode = 'login', msg = '', then) {
+  if (then !== undefined) S.afterAuth = then;
   const pr = S.profile || {};
   const su = mode === 'signup';
-  app.innerHTML = `
-  <div class="auth-screen">
-    <div class="auth-hero"><div style="font-size:46px">🌿</div><h1>Keralam Kitchen</h1><p>${esc(t('tagline'))}</p></div>
-    <div class="card auth-card">
+  openSheet(`
+  <div class="auth-sheet">
+    <div class="row between"><div class="auth-hero-s">🌿 <b>Keralam Kitchen</b></div><button class="btn sm ghost" data-a="close">✕</button></div>
+    <div class="auth-card">
       <div class="seg"><button class="${!su ? 'on' : ''}" data-a="authMode" data-m="login">${esc(t('login'))}</button><button class="${su ? 'on' : ''}" data-a="authMode" data-m="signup">${esc(t('signup'))}</button></div>
       <h2 style="margin:14px 0 4px">${esc(su ? t('signup_t') : t('login_t'))}</h2>
       ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ''}
@@ -683,8 +702,7 @@ function renderAuth(mode = 'login', msg = '') {
       <p class="small" style="text-align:center;margin-top:14px"><a href="#" data-a="authMode" data-m="${su ? 'login' : 'signup'}">${esc(su ? t('have_acc') : t('no_acc'))}</a></p>
     </div>
     <p class="small muted" style="text-align:center">One account per mobile number. Your PIN keeps your orders private.<br>${CFG.PHONES.map(p => `<a class="phone-link" href="${waLink(p, 'Hi Keralam Kitchen 🌿 I need help logging in')}" target="_blank" rel="noopener">🟢 ${p}</a>`).join(' ')}</p>
-    <p class="small" style="text-align:center"><a href="#" data-a="openLang">🌐 ${esc(t('change_lang'))}</a> · <a href="admin.html">Kitchen login</a></p>
-  </div>`;
+  </div>`);
   authPhoto = '';
   const f = $('#auPhoto');
   if (f) f.onchange = async e => { const file = e.target.files[0]; if (!file) return; authPhoto = await fileToDataUrl(file, 400); const p = $('#auPrev'); p.src = authPhoto; p.classList.remove('hidden'); };
@@ -707,15 +725,17 @@ async function authGo(btn) {
     S.auth = { phone, pin }; lsSet('kk_auth', S.auth); setMe(r.customer);
     if (su) { S.agreed = true; lsSet('kk_agreed', true); }
     try { sessionStorage.setItem('kk_visit', 1); } catch (e) {}
-    S.tab = 'menu'; render(); handleHash();
+    const after = S.afterAuth; S.afterAuth = null;
+    closeSheet(); render(); handleHash();
+    if (after) setTimeout(after, 60);
     confetti(su ? 220 : 90);
     toast(su ? '🎉 Welcome to Keralam Kitchen, ' + r.customer.name.split(' ')[0] + '!' : '👋 Welcome back, ' + r.customer.name.split(' ')[0] + '!', 3500);
     refreshOrders(true); flushQueue();
   } catch (e) {
     btn.disabled = false; btn.textContent = old;
     if (e.offline) return toast(t('offline'), 4000);
-    if (/^EXISTS:/.test(e.message)) return renderAuth('login', msgOf(e));
-    if (/^NOACCOUNT:/.test(e.message)) return renderAuth('signup', msgOf(e));
+    if (/^EXISTS:/.test(e.message)) return openAuth('login', msgOf(e));
+    if (/^NOACCOUNT:/.test(e.message)) return openAuth('signup', msgOf(e));
     if (/^BLOCKED:/.test(e.message)) return renderBlocked();
     toast(msgOf(e), 4500);
   }
@@ -730,7 +750,7 @@ async function forgotPin(btn) {
       <p class="muted">The Keralam Kitchen team will confirm it's you and send your PIN on WhatsApp. You can also message us now:</p></div>
       ${CFG.PHONES.map(p => `<a class="btn wa big" style="margin-top:8px" href="${waLink(p, 'Hi Keralam Kitchen 🌿 I forgot my PIN. My number is ' + phone)}" target="_blank" rel="noopener">🟢 WhatsApp ${p}</a>`).join('')}
       <button class="btn ghost big" style="margin-top:10px" data-a="close">OK</button>`, true);
-  } catch (e) { toast(e.offline ? t('offline') : msgOf(e), 4500); if (/^NOACCOUNT:/.test(e.message)) renderAuth('signup', msgOf(e)); }
+  } catch (e) { toast(e.offline ? t('offline') : msgOf(e), 4500); if (/^NOACCOUNT:/.test(e.message)) openAuth('signup', msgOf(e)); }
   btn.disabled = false;
 }
 function renderBlocked() {
@@ -738,7 +758,7 @@ function renderBlocked() {
   app.innerHTML = `<div class="auth-screen"><div class="card auth-card" style="text-align:center"><div style="font-size:56px">🙏</div>
     <h2>Your account is on hold</h2><p class="muted">Please contact Keralam Kitchen to sort this out.</p>
     ${CFG.PHONES.map(p => `<a class="btn wa big" style="margin-top:8px" href="${waLink(p, 'Hi Keralam Kitchen 🌿 my account is on hold, please help')}" target="_blank" rel="noopener">🟢 WhatsApp ${p}</a>`).join('')}
-    <button class="btn ghost big" style="margin-top:10px" data-a="authMode" data-m="login">← ${esc(t('login'))}</button></div></div>`;
+    <button class="btn ghost big" style="margin-top:10px" data-a="home">← ${esc(t('menu'))}</button></div></div>`;
 }
 
 /* ---------------- My account ---------------- */
@@ -799,12 +819,52 @@ function handleHash() {
   history.replaceState({ root: 1 }, '');
   history.pushState({ tab: 'menu' }, '');
   if (!S.lang) { renderLang(); }
-  else if (!S.auth) { renderAuth(S.profile.phone ? 'login' : 'signup'); }
   else { render(); handleHash(); }
   loadMenu(); refreshOrders(true); flushQueue();
   try { if (!sessionStorage.getItem('kk_visit')) { sessionStorage.setItem('kk_visit', 1); capi('visit', { device: deviceName() }).then(r => { setMe(r.customer); setSettings(r.settings); }).catch(() => {}); } } catch (e) {}
   window.addEventListener('online', () => { flushQueue(); loadMenu(); });
   setInterval(tickTimers, 1000);
-  setInterval(() => { if (document.hidden || !S.lang || !S.auth) return; refreshOrders(true); if (S.tab === 'help') loadChat(); }, 20000);
+  // fast "anything new?" check every 8 s (tiny request), full refresh only when something changed
+  setInterval(async () => {
+    if (document.hidden || !S.lang || !S.auth) return;
+    try { const r = await capi('ping'); S.adminOnline = r.adminOnline; if (r.rev && r.rev !== S.rev) { const first = !S.rev; S.rev = r.rev; if (!first || S.tab === 'help') { refreshOrders(true); loadChat(); } } } catch (e) {}
+  }, 8000);
+  setInterval(() => { if (!document.hidden && S.auth) refreshOrders(true); }, 90000);
   setInterval(() => { if (!document.hidden && S.lang) loadMenu(); }, 120000);
 })();
+
+/* ---------------- WhatsApp order without an account ---------------- */
+function waOrderSheet() {
+  const pr = S.me || S.profile || {};
+  const pick = $('#pickup') ? $('#pickup').value : '', notes = $('#notes') ? $('#notes').value : '';
+  S.waDraft = { pick, notes };
+  openSheet(`
+    <div class="row between"><h2 style="margin:0">${ic('wa', 22)} ${esc(t('wa_order'))}</h2><button class="btn sm ghost" data-a="close">✕</button></div>
+    <p class="muted small">${esc(t('wa_order_s'))}</p>
+    <label class="f">${esc(t('name'))} *</label><input class="in" id="gName" autocomplete="name" value="${esc(pr.name || '')}">
+    <div class="row" style="gap:10px;align-items:flex-start">
+      <div style="flex:1.3"><label class="f">${esc(t('phone'))} *</label><input class="in" id="gPhone" inputmode="numeric" data-digits="10" maxlength="10" autocomplete="tel" value="${esc(pr.phone || '')}" placeholder="98XXXXXXXX"></div>
+      <div style="flex:1"><label class="f">${esc(t('flat'))}</label><input class="in" id="gFlat" value="${esc(pr.flat || '')}" placeholder="A-504"></div>
+    </div>
+    <div class="total"><span>${esc(t('total'))}</span><span>${money(cartTotal())}</span></div>
+    <h3 style="margin:14px 0 6px">${esc(t('send_to'))}:</h3>
+    ${CFG.PHONES.map(p => `<button class="btn wa big" style="margin-top:8px" data-a="waSend" data-p="${p}">${ic('wa', 20)} WhatsApp ${p}</button>`).join('')}
+    <a class="btn ghost big" style="margin-top:8px" href="${telLink(CFG.PHONES[0])}">${ic('phone', 18)} ${esc(t('call_us'))}</a>`);
+}
+function waSend(btn) {
+  const c = { name: $('#gName').value.trim(), phone: KKCore.digits($('#gPhone').value), flat: $('#gFlat').value.trim() };
+  if (!c.name || c.phone.length !== 10) { toast(t('required')); (!c.name ? $('#gName') : $('#gPhone')).focus(); return; }
+  const dr = S.waDraft || {}, pv = String(dr.pick || '');
+  const p = { id: KKCore.newOrderId(), items: S.cart.map(x => ({ id: x.id, v: x.v, addons: x.addons, qty: x.qty })), customer: c, notes: dr.notes || '',
+    pickupAt: pv.startsWith('asap:') ? +pv.slice(5) : +pv || 0, asap: pv.startsWith('asap:'), sentTo: btn.dataset.p };
+  const o = localOrder(p); o.asap = p.asap; o.guest = true;
+  // open WhatsApp right away (must happen inside the tap), save to the kitchen dashboard in the background
+  window.open(waLink(btn.dataset.p, KKCore.orderText(o)), '_blank');
+  api('guestOrder', p).catch(e => { if (/^BLOCKED:/.test(e.message)) toast(msgOf(e), 5000); });
+  if (!S.me) { S.profile = { ...S.profile, ...c }; lsSet('kk_profile', S.profile); }
+  S.cart = []; saveCart(); closeSheet(); render(); confetti(200);
+  openSheet(`<div class="success"><div class="tick">✓</div><h2 style="margin:0">${esc(t('confirmed'))}</h2>
+    <p class="muted">${esc(o.id)} → WhatsApp ${esc(btn.dataset.p)}</p></div>
+    <a class="btn wa big" href="${waLink(btn.dataset.p, KKCore.orderText(o))}" target="_blank" rel="noopener">${ic('wa', 20)} ${esc(t('send_wa'))}</a>
+    <button class="btn ghost big" style="margin-top:10px" data-a="close">OK</button>`, true);
+}
