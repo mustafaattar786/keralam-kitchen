@@ -148,3 +148,23 @@ textarea.in { min-height: 80px; resize: vertical; }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .demo { background: #fff3cd; color: #6b4b00; font-size: 12px; text-align: center; padding: 6px; }
 [dir=rtl] .line, [dir=rtl] .row { direction: rtl; }
+
+/* ---- v5: accounts, sticky language button, avatar, popups ---- */
+.lang-done { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--cream) 70%, rgba(255,250,240,0)); z-index: 40; }
+.lang-done .btn { max-width: 528px; margin: 0 auto; display: flex; box-shadow: 0 8px 24px rgba(15,81,50,.35); }
+.logo-btn { background: none; border: 0; color: inherit; text-align: left; padding: 0; cursor: pointer; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; background: var(--gold); color: #3a2b00; font-weight: 800; flex: none; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.avbtn { padding: 0 4px; background: transparent; }
+.auth-screen { max-width: 480px; margin: 0 auto; padding: calc(16px + env(safe-area-inset-top)) 16px 40px; }
+.auth-hero { text-align: center; color: var(--green); padding: 18px 0 4px; }
+.auth-hero h1 { margin: 4px 0 0; } .auth-hero p { margin: 4px 0 0; color: var(--muted); }
+.auth-card { padding: 18px; }
+.seg { display: flex; background: var(--leaf); border-radius: 14px; padding: 4px; gap: 4px; }
+.seg button { flex: 1; border: 0; background: transparent; border-radius: 11px; min-height: 44px; font-weight: 700; color: var(--green); cursor: pointer; }
+.seg button.on { background: #fff; box-shadow: 0 2px 8px rgba(15,81,50,.15); }
+.pin-in { letter-spacing: 8px; font-size: 22px !important; text-align: center; }
+.banner.warn { background: var(--warn); color: #8a5a00; }
+.me-line { display: flex; align-items: center; gap: 10px; background: #fff; border: 2px solid var(--line); border-radius: 14px; padding: 10px; margin-top: 10px; }
+.phone-link { display: inline-block; margin: 4px; padding: 8px 12px; border-radius: 999px; background: #e7f9ee; color: #128c4a; font-weight: 700; text-decoration: none; }
+.sad { font-size: 84px; line-height: 1; margin: 6px 0 8px; animation: sadbob 1.4s ease-in-out infinite; }
+@keyframes sadbob { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(6px) rotate(4deg); } }

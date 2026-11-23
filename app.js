@@ -13,8 +13,41 @@ const S = {
   tab: 'menu',
   sel: {},
   chat: [],
-  pickLang: null
+  pickLang: null,
+  auth: lsGet('kk_auth', null),
+  me: lsGet('kk_me', null)
 };
+if (S.me) S.profile = { name: S.me.name, flat: S.me.flat, phone: S.me.phone };
+Object.assign(I18N.en, {
+  login_t: 'Login to your account', signup_t: 'Create your account', pin: 'PIN (4–6 digits)', pin2: 'Choose a 4–6 digit PIN',
+  login: 'Login', signup: 'Create account', forgot: 'Forgot PIN?', have_acc: 'Already have an account? Login', no_acc: 'New here? Create account',
+  my_acc: 'My account', logout: 'Logout', edit_profile: 'Edit profile', new_pin: 'New PIN (leave empty to keep)', save: 'Save',
+  profile_photo: 'Profile photo (optional)', remove_photo: 'Remove photo', notif_on: 'Notifications are ON', notif_btn: 'Notify me about my orders',
+  sorry_t: 'Sorry to see you go…', sorry_s: 'Your order is cancelled. We hope to cook for you again soon! 🌿', exit_back: 'Press back again to exit'
+});
+const msgOf = e => String((e && e.message) || e).replace(/^[A-Z]+: /, '');
+async function capi(action, d = {}) {
+  try { return await api(action, { ...d, cauth: S.auth }); }
+  catch (e) {
+    if (/^LOGIN:/.test(e.message)) { doLogout(true); }
+    if (/^BLOCKED:/.test(e.message)) { renderBlocked(); }
+    throw e;
+  }
+}
+function setMe(c) {
+  if (!c) return;
+  S.me = c; lsSet('kk_me', c);
+  S.profile = { name: c.name, flat: c.flat, phone: c.phone }; lsSet('kk_profile', S.profile);
+}
+function doLogout(expired) {
+  if (S.auth && !expired) capi('track', { type: 'logout', text: 'Logged out' }).catch(() => {});
+  S.auth = null; S.me = null; S.orders = []; S.chat = [];
+  lsSet('kk_auth', null); lsSet('kk_me', null); lsSet('kk_orders', []);
+  closeSheet(true); renderAuth('login', expired ? 'Please log in again.' : '');
+}
+const avatar = (c, size = 36) => c && c.photo
+  ? `<img class="avatar" src="${esc(c.photo)}" alt="" style="width:${size}px;height:${size}px">`
+  : `<span class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .45)}px">${esc(((c && c.name) || '?').trim().charAt(0).toUpperCase())}</span>`;
 const MIN = 60000;
 const t = k => (I18N[S.lang] && I18N[S.lang][k]) || (I18N[LANG_FALLBACK[S.lang]] && I18N[LANG_FALLBACK[S.lang]][k]) || I18N.en[k] || k;
 const menuItem = id => S.menu.find(m => m.id === id);
@@ -39,8 +72,8 @@ function renderLang(fromSettings) {
     <select class="in" id="langSel" aria-label="All Indian languages" style="min-height:56px;font-size:18px">
       ${LANGS.map(l => `<option value="${l[0]}" ${l[0] === cur ? 'selected' : ''}>${l[1]} — ${l[2]}</option>`).join('')}
     </select>
-    <div style="height:18px"></div>
-    <button class="btn primary big" data-a="langDone" data-s="${fromSettings ? 1 : ''}">✓ ${esc((I18N[cur] || I18N[LANG_FALLBACK[cur]] || I18N.en).done)} — ${esc(langName(cur))}</button>
+    <div style="height:96px"></div>
+    <div class="lang-done"><button class="btn primary big" data-a="langDone" data-s="${fromSettings ? 1 : ''}">✓ ${esc((I18N[cur] || I18N[LANG_FALLBACK[cur]] || I18N.en).done)} — ${esc(langName(cur))}</button></div>
   </div>`;
   $('#langSel').onchange = e => { S.pickLang = e.target.value; renderLang(fromSettings); };
 }
@@ -133,10 +166,11 @@ function render() {
   app.innerHTML = `
   ${DEMO ? '<div class="demo">Demo mode — orders stay on this device until the Google Sheet backend is connected.</div>' : ''}
   <header class="top"><div class="wrap">
-    <div class="logo">🌿 Keralam Kitchen<small>${esc(t('tagline'))}</small></div>
+    <button class="logo logo-btn" data-a="home" aria-label="Menu">🌿 Keralam Kitchen<small>${esc(t('tagline'))}</small></button>
     <div class="sp"></div>
     <button class="iconbtn" data-a="tab" data-t="help" title="${esc(S.adminOnline ? t('admin_on') : t('admin_off'))}"><span class="dot ${S.adminOnline ? 'on' : ''}"></span></button>
     <button class="iconbtn" data-a="openLang">🌐 ${esc((LANGS.find(l => l[0] === S.lang) || [, 'EN'])[1])}</button>
+    ${S.me ? `<button class="iconbtn avbtn" data-a="tab" data-t="info" aria-label="${esc(t('my_acc'))}">${avatar(S.me, 32)}</button>` : ''}
   </div></header>
   <main class="wrap" id="main">${renderTab()}</main>
   ${S.tab === 'menu' && S.cart.length ? `<div class="cartbar"><button class="btn gold" data-a="openCart"><span>🛒 ${cartCount()} · ${S.modifying ? '✏️ ' + esc(S.modifying) + ' · ' : ''}${esc(t('go_cart'))}</span><span>${money(cartTotal())} ›</span></button></div>` : ''}
@@ -207,7 +241,7 @@ function renderMenu() {
     <button class="btn sm" data-a="openReview">${esc(t('write_review'))}</button></div>
     ${S.reviews.slice(0, 12).map(reviewHtml).join('') || '<p class="muted small">Be the first to review! 😊</p>'}
   </div>
-  <p class="muted small" style="text-align:center">📞 ${CFG.PHONES.join(' / ')}</p>`;
+  <p class="small" style="text-align:center">${CFG.PHONES.map(p => `<a class="phone-link" href="${waLink(p, 'Hi Keralam Kitchen 🌿')}" target="_blank" rel="noopener">🟢 WhatsApp ${p}</a>`).join(' ')}</p>`;
 }
 function reviewHtml(r) {
   return `<div class="review"><div class="row between"><b>${esc(r.name)}</b><span class="stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</span></div>
@@ -216,6 +250,7 @@ function reviewHtml(r) {
 }
 function detailFields(p) {
   const pr = (p === 'cart' && S.draft) || S.profile;
+  if (S.me) return `<div class="me-line">${avatar(S.me, 34)}<div style="flex:1"><b>${esc(S.me.name)}</b><div class="small muted">Flat ${esc(S.me.flat)} · ${esc(S.me.phone)}</div></div><button class="btn sm ghost" data-a="editAccount">✏️</button></div>`;
   if (pr.name && pr.flat && pr.phone && p !== 'cart' && !S.editingProfile) return `<p class="small muted" style="margin:10px 0 0">👤 ${esc(pr.name)} · ${esc(pr.flat)} · ${esc(pr.phone)} <a href="#" data-a="editProfile">✏️</a></p>`;
   return `
   <label class="f">${esc(t('name'))} *</label><input class="in" id="${p}Name" autocomplete="name" value="${esc(pr.name || '')}">
@@ -234,14 +269,17 @@ function saveProfile(d) { S.profile = d; S.editingProfile = false; S.draft = nul
 
 /* ---------------- Cart sheet ---------------- */
 function openSheet(html, center) {
-  closeSheet();
+  const had = $('#overlay'); if (had) had.remove(); else history.pushState({ tab: S.tab, sheet: 1 }, '');
   const o = document.createElement('div'); o.className = 'overlay' + (center ? ' center' : ''); o.id = 'overlay';
   o.innerHTML = `<div class="sheet" role="dialog">${center ? '' : '<div class="grab"></div>'}${html}</div>`;
   o.addEventListener('click', e => { if (e.target === o) closeSheet(); });
   document.body.appendChild(o); document.body.style.overflow = 'hidden';
   return o;
 }
-function closeSheet() { const o = $('#overlay'); if (o) o.remove(); document.body.style.overflow = ''; }
+function closeSheet(fromPop) {
+  const o = $('#overlay'); if (o) o.remove(); document.body.style.overflow = '';
+  if (o && !fromPop && history.state && history.state.sheet) { S._skipPop = true; history.back(); }
+}
 
 function renderCart() {
   if (!S.cart.length) return openSheet(`<h2>${esc(t('cart'))}</h2><p class="muted">${esc(t('empty_cart'))}</p><button class="btn big" data-a="close">OK</button>`);
@@ -269,8 +307,8 @@ function renderCart() {
     <h3 style="margin-top:16px">👤 ${esc(t('details'))}</h3>
     ${detailFields('cart')}
     <h3 style="margin-top:16px">💳</h3>
-    ${CFG.UPI_ID ? `<label class="radio"><input type="radio" name="pay" value="now" ${pay === 'now' ? 'checked' : ''}> ${esc(t('pay_now'))}</label>` : ''}
-    <label class="radio"><input type="radio" name="pay" value="spot" ${pay !== 'now' || !CFG.UPI_ID ? 'checked' : ''}> ${esc(t('pay_spot'))}</label>
+    ${upiId() ? `<label class="radio"><input type="radio" name="pay" value="now" ${pay === 'now' ? 'checked' : ''}> ${esc(t('pay_now'))}</label>` : ''}
+    <label class="radio"><input type="radio" name="pay" value="spot" ${pay !== 'now' || !upiId() ? 'checked' : ''}> ${esc(t('pay_spot'))}</label>
     <label class="check"><input type="checkbox" id="agree" ${S.agreed ? 'checked' : ''}><span>${esc(t('agree'))} — <a href="#" data-a="showDisclaimer">${esc(t('disclaimer_t'))}</a></span></label>
     <button class="btn primary big" data-a="placeOrder">✓ ${esc(t('confirm'))} · ${money(cartTotal())}</button>
     <p class="note">${esc(t('lock_note'))}</p>`);
@@ -287,10 +325,10 @@ async function placeOrder(btn) {
   try {
     let order;
     if (S.modifying) {
-      order = (await api('modifyOrder', { ...payload, id: S.modifying, phone: d.phone })).order;
+      order = (await capi('modifyOrder', { ...payload, id: S.modifying })).order;
     } else {
       payload.id = KKCore.newOrderId();
-      try { order = (await api('placeOrder', payload)).order; }
+      try { order = (await capi('placeOrder', payload)).order; }
       catch (e) {
         if (!e.offline) throw e;
         S.queue.push(payload); lsSet('kk_queue', S.queue);
@@ -300,8 +338,8 @@ async function placeOrder(btn) {
     }
     upsertLocalOrder(order);
     S.cart = []; saveCart(); S.modifying = null; lsSet('kk_modifying', null);
-    closeSheet(); render(); showConfirmation(order);
-  } catch (e) { toast(e.message, 4000); btn.disabled = false; btn.textContent = t('confirm'); }
+    closeSheet(); render(); showConfirmation(order); confetti(220); beep();
+  } catch (e) { toast(msgOf(e), 4000); btn.disabled = false; btn.textContent = t('confirm'); }
 }
 function localOrder(p) {
   const pr = KKCore.priceItems(S.menu, p.items, p.type === 'custom');
@@ -314,10 +352,10 @@ function upsertLocalOrder(o) {
   S.orders = S.orders.slice(0, 40); lsSet('kk_orders', S.orders);
 }
 async function flushQueue() {
-  if (!S.queue.length || DEMO) return;
+  if (!S.queue.length || DEMO || !S.auth) return;
   const left = [];
   for (const p of S.queue) {
-    try { const { order } = await api('placeOrder', p); upsertLocalOrder(order); toast('✅ ' + order.id + ' sent'); }
+    try { const { order } = await capi('placeOrder', p); upsertLocalOrder(order); toast('✅ ' + order.id + ' sent'); }
     catch (e) { if (e.offline) left.push(p); }
   }
   S.queue = left; lsSet('kk_queue', left); render();
@@ -329,7 +367,7 @@ function orderActions(o) {
   const wa = waLink(CFG.WHATSAPP_ORDERS_TO, KKCore.orderText(o));
   return `
   <a class="btn wa big" href="${wa}" target="_blank" rel="noopener">🟢 ${esc(t('send_wa'))}</a>
-  ${o.pay === 'now' && CFG.UPI_ID && o.total && o.status !== 'cancelled' && o.payStatus !== 'paid' ? `<a class="btn gold big" style="margin-top:10px" href="${upiLink(o.total, o.id)}">💳 ${esc(t('pay_upi'))} · ${money(o.total)}</a>` : ''}
+  ${o.pay === 'now' && upiId() && o.total && o.status !== 'cancelled' && o.payStatus !== 'paid' ? `<a class="btn gold big" style="margin-top:10px" href="${upiLink(o.total, o.id)}">💳 ${esc(t('pay_upi'))} · ${money(o.total)}</a>` : ''}
   ${['cancelled', 'collected'].includes(o.status) || o.type === 'custom' ? '' : `
   <div class="row" style="margin-top:10px">
     <button class="btn danger" style="flex:1" data-a="cancelOrder" data-id="${o.id}" ${can ? '' : 'disabled'}>✕ ${esc(t('cancel'))}</button>
@@ -350,11 +388,12 @@ function showConfirmation(o) {
     <div class="card" style="margin:10px 0">${(o.items || []).map(l => `<div class="row between"><span>${esc(l.name)} (${esc(l.variant)}${l.addons && l.addons.length ? ' + ' + esc(l.addons.join(', ')) : ''}) × ${l.qty}</span><b>${money(l.amount)}</b></div>`).join('')}
       ${o.total ? `<div class="total"><span>${esc(t('total'))}</span><span>${money(o.total)}</span></div>` : ''}</div>
     ${orderActions(o)}
+    ${notifState() === 'default' ? `<button class="btn ghost big" style="margin-top:10px" data-a="enableNotif">🔔 ${esc(t('notif_btn'))}</button>` : ''}
     <button class="btn ghost big" style="margin-top:10px" data-a="goOrders">🧾 ${esc(t('orders'))}</button>`, true);
   tickTimers();
 }
 function renderOrders() {
-  if (!S.profile.phone && !S.orders.length) return `<div class="card" style="text-align:center"><div style="font-size:48px">🧾</div><p>${esc(t('empty_orders'))}</p><button class="btn primary" data-a="tab" data-t="menu">🍽️ ${esc(t('menu'))}</button></div>`;
+  if (!S.orders.length) return `<div class="card" style="text-align:center"><div style="font-size:48px">🧾</div><p>${esc(t('empty_orders'))}</p><button class="btn primary" data-a="tab" data-t="menu">🍽️ ${esc(t('menu'))}</button></div>`;
   const list = S.orders.length ? S.orders.map(o => {
     const reviewAt = KKCore.reviewOpensAt(o);
     return `<div class="card">
@@ -379,18 +418,21 @@ function tickTimers() {
   });
 }
 async function refreshOrders(silent) {
-  if (!S.profile.phone) return;
+  if (!S.auth) return;
   try {
-    const r = await api('myOrders', { phone: S.profile.phone });
+    const r = await capi('myOrders');
+    setMe(r.customer); setSettings(r.settings);
     const before = Object.fromEntries(S.orders.map(o => [o.id, o.status]));
     const queuedIds = S.queue.map(q => q.id);
     S.orders = [...r.orders, ...S.orders.filter(o => queuedIds.includes(o.id))];
     lsSet('kk_orders', S.orders);
     S.adminOnline = r.adminOnline;
     r.orders.forEach(o => {
-      if (before[o.id] && before[o.id] !== o.status && o.status === 'ready') {
-        toast('🔔 ' + o.id + ' — ' + t('st_ready') + '!', 6000); beep();
-        try { if (Notification.permission === 'granted') new Notification('Keralam Kitchen', { body: o.id + ' — ' + t('st_ready'), icon: 'icon-192.png' }); } catch (e) {}
+      if (before[o.id] && before[o.id] !== o.status) {
+        const txt = o.id + ' — ' + t('st_' + o.status);
+        toast('🔔 ' + txt, 6000); beep();
+        if (o.status === 'ready') confetti(140);
+        pushNotify('Keralam Kitchen 🌿', txt);
       }
     });
     if (!$('#overlay') && !(document.activeElement && document.activeElement.matches('input,textarea,select'))) render();
@@ -403,7 +445,7 @@ function renderHelp() {
   return `
   <div class="card">
     <div class="row"><span class="dot ${S.adminOnline ? 'on' : ''}"></span><b>${esc(S.adminOnline ? t('admin_on') : t('admin_off'))}</b></div>
-    ${pr.phone && !S.editingProfile ? `
+    ${S.auth ? `
       <div class="chat" id="chat">${S.chat.map(m => `<div class="msg ${m.from === 'customer' ? 'me' : 'them'}">${esc(m.text)}<small>${fmtClock(m.at)}</small></div>`).join('') || '<p class="muted small">👋 Hi! How can we help you?</p>'}</div>
       <div class="row" style="margin-top:8px"><input class="in" id="chatIn" style="flex:1" placeholder="${esc(t('chat_ph'))}"><button class="btn primary" data-a="chatSend">➤</button></div>`
     : `${detailFields('h')}<button class="btn primary big" style="margin-top:12px" data-a="saveHelpProfile">${esc(t('done'))}</button>`}
@@ -413,12 +455,13 @@ function renderHelp() {
     ${CFG.PHONES.map(p => `<div class="row" style="margin:8px 0"><b style="flex:1;font-size:18px">${p}</b>
       <a class="btn sm" href="${telLink(p)}">📞 ${esc(t('call'))}</a>
       <a class="btn sm wa" href="${waLink(p, 'Hi Keralam Kitchen 🌿')}" target="_blank" rel="noopener">WhatsApp</a></div>`).join('')}
+    <p class="small muted" style="margin:6px 0 0">Tap a number's WhatsApp button to chat with us directly.</p>
   </div>`;
 }
 function scrollChat() { const c = $('#chat'); if (c) c.scrollTop = c.scrollHeight; }
 async function loadChat() {
-  if (!S.profile.phone) return;
-  try { const r = await api('chatList', { phone: S.profile.phone }); const changed = r.messages.length !== S.chat.length; S.chat = r.messages; S.adminOnline = r.adminOnline; if (S.tab === 'help' && changed && !$('#overlay')) { const v = ($('#chatIn') || {}).value; render(); if (v && $('#chatIn')) $('#chatIn').value = v; } } catch (e) {}
+  if (!S.auth) return;
+  try { const r = await capi('chatList'); const changed = r.messages.length !== S.chat.length; S.chat = r.messages; S.adminOnline = r.adminOnline; if (S.tab === 'help' && changed && !$('#overlay')) { const v = ($('#chatIn') || {}).value; render(); if (v && $('#chatIn')) $('#chatIn').value = v; } } catch (e) {}
 }
 function renderInfo() {
   return `
@@ -429,9 +472,14 @@ function renderInfo() {
     <p>🗓️ ${esc(t('advance'))}</p>
     <img src="img/menu-poster.jpg" alt="Menu poster" style="border-radius:14px;margin-top:8px" loading="lazy">
   </div>
-  <div class="card"><button class="btn big" data-a="openLang">🌐 ${esc(t('change_lang'))}</button>
-    ${S.profile.phone ? `<button class="btn ghost big" style="margin-top:10px" data-a="editProfile">👤 ${esc(t('details'))}: ${esc(S.profile.name)} · ${esc(S.profile.flat)}</button>` : ''}
-    <button class="btn ghost big" style="margin-top:10px" data-a="enableNotif">🔔 Notify me when ready</button></div>
+  ${S.me ? `<div class="card acct">
+    <div class="row">${avatar(S.me, 64)}<div style="flex:1"><h3 style="margin:0">${esc(S.me.name)}</h3><div class="muted small">Flat ${esc(S.me.flat)} · ${esc(S.me.phone)}</div>
+      <div class="muted small">${S.me.createdAt ? 'Member since ' + new Date(S.me.createdAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : ''}</div></div></div>
+    <button class="btn big" style="margin-top:12px" data-a="editAccount">✏️ ${esc(t('edit_profile'))}</button>
+    ${notifState() === 'granted' ? `<div class="banner">🔔 ${esc(t('notif_on'))}</div>` : notifState() === 'unsupported' ? '' : `<button class="btn ghost big" style="margin-top:10px" data-a="enableNotif">🔔 ${esc(t('notif_btn'))}</button>`}
+    <button class="btn ghost big" style="margin-top:10px" data-a="logout">⎋ ${esc(t('logout'))}</button>
+  </div>` : ''}
+  <div class="card"><button class="btn big" data-a="openLang">🌐 ${esc(t('change_lang'))}</button></div>
   <p class="small muted" style="text-align:center"><a href="admin.html">Kitchen login</a></p>`;
 }
 
@@ -458,9 +506,9 @@ async function submitReview(btn) {
   if (d.flat) saveProfile({ ...S.profile, ...d });
   btn.disabled = true;
   try {
-    await api('addReview', { orderId: reviewState.orderId, phone: d.phone, name: d.name, itemId: $('#rvItem').value, stars: reviewState.stars, text: $('#rvText').value.trim(), photo: reviewState.photo });
+    await capi('addReview', { orderId: reviewState.orderId, name: d.name, itemId: $('#rvItem').value, stars: reviewState.stars, text: $('#rvText').value.trim(), photo: reviewState.photo });
     closeSheet(); toast('⭐ Thank you! 🙏'); await loadMenu(); refreshOrders(true);
-  } catch (e) { toast(e.offline ? t('offline') : e.message, 4000); btn.disabled = false; }
+  } catch (e) { toast(e.offline ? t('offline') : msgOf(e), 4000); btn.disabled = false; }
 }
 
 /* ---------------- Custom order ---------------- */
@@ -474,24 +522,24 @@ async function sendCustom(btn) {
   const payload = { id: KKCore.newOrderId(), type: 'custom', customText: text, customPhoto, items: [], customer: d, notes: '' };
   try {
     let order;
-    try { order = (await api('placeOrder', payload)).order; }
+    try { order = (await capi('placeOrder', payload)).order; }
     catch (e) { if (!e.offline) throw e; S.queue.push(payload); lsSet('kk_queue', S.queue); order = localOrder(payload); order.queued = true; }
     upsertLocalOrder(order); customPhoto = '';
-    render();
+    render(); confetti(160);
     openSheet(`<div class="success"><div class="tick">💚</div><h2>${esc(t('custom_done'))}</h2><p class="muted">${esc(order.id)}</p>
       <a class="btn wa big" href="${waLink(CFG.WHATSAPP_ORDERS_TO, KKCore.orderText(order))}" target="_blank" rel="noopener">🟢 ${esc(t('send_wa'))}</a>
       <button class="btn ghost big" style="margin-top:10px" data-a="close">OK</button></div>`, true);
-  } catch (e) { toast(e.message, 4000); btn.disabled = false; }
+  } catch (e) { toast(msgOf(e), 4000); btn.disabled = false; }
 }
 
 /* ---------------- Data loading ---------------- */
 async function loadMenu() {
   try {
     const r = await api('menu');
-    S.menu = r.menu; S.reviews = r.reviews; S.adminOnline = r.adminOnline;
+    S.menu = r.menu; S.reviews = r.reviews; S.adminOnline = r.adminOnline; setSettings(r.settings);
     lsSet('kk_menu', S.menu); lsSet('kk_reviews', S.reviews);
     S.cart = S.cart.filter(c => menuItem(c.id)); saveCart();
-    if (!$('#overlay') && S.lang && !document.activeElement.matches('input,textarea')) render();
+    if (!$('#overlay') && S.lang && S.auth && !document.activeElement.matches('input,textarea')) render();
   } catch (e) {}
 }
 
@@ -502,10 +550,12 @@ const ACTIONS = {
     const first = !S.lang;
     S.lang = S.pickLang || S.lang || 'en'; lsSet('kk_lang', S.lang); S.pickLang = null;
     applyDir();
-    if (first) { render(); await showLoader(3000); } else render();
+    if (first) { if (S.auth) render(); else renderAuth(S.profile.phone ? 'login' : 'signup'); await showLoader(3000); }
+    else if (S.auth) render(); else renderAuth('login');
   },
+  home: () => { closeSheet(); if (S.tab !== 'menu') go('menu'); window.scrollTo({ top: 0, behavior: 'smooth' }); },
   openLang: () => { closeSheet(); S.pickLang = S.lang; renderLang(true); },
-  tab: el => { S.tab = el.dataset.t; render(); window.scrollTo(0, 0); if (S.tab === 'orders') refreshOrders(); if (S.tab === 'help') loadChat(); },
+  tab: el => go(el.dataset.t),
   variant: el => { selOf(el.dataset.id).v = +el.dataset.i; render(); },
   addon: el => { const s = selOf(el.dataset.id), i = +el.dataset.i; s.addons = s.addons.includes(i) ? s.addons.filter(x => x !== i) : [...s.addons, i].sort(); render(); },
   qty: el => { const s = selOf(el.dataset.id); s.qty = Math.max(1, Math.min(99, s.qty + +el.dataset.d)); render(); },
@@ -514,20 +564,22 @@ const ACTIONS = {
     const ex = S.cart.find(c => c.key === key);
     if (ex) ex.qty += s.qty; else S.cart.push({ key, id, v: s.v, addons: [...s.addons], qty: s.qty });
     saveCart(); S.sel[id] = { v: s.v, addons: [], qty: 1 };
-    render(); toast('✓ ' + menuItem(id).name);
+    const r = el.getBoundingClientRect();
+    render(); toast('✓ ' + menuItem(id).name); confetti(70, { x: r.left + r.width / 2, y: r.top });
+    capi('track', { type: 'cart', text: 'Added to cart: ' + menuItem(id).name + ' × ' + s.qty }).catch(() => {});
   },
-  openCart: () => renderCart(),
+  openCart: () => { renderCart(); capi('track', { type: 'checkout', text: 'Opened cart · ' + money(cartTotal()) }).catch(() => {}); },
   cartQty: el => { const c = S.cart[+el.dataset.i]; c.qty += +el.dataset.d; if (c.qty <= 0) S.cart.splice(+el.dataset.i, 1); saveCart(); if (S.cart.length) renderCart(); else { closeSheet(); } render(); },
   close: () => closeSheet(),
   placeOrder: el => placeOrder(el),
   showDisclaimer: () => alert(t('disclaimer')),
   stopModify: () => { S.modifying = null; lsSet('kk_modifying', null); S.cart = []; saveCart(); closeSheet(); render(); },
-  goOrders: () => { closeSheet(); ACTIONS.tab({ dataset: { t: 'orders' } }); },
+  goOrders: () => { closeSheet(); setTimeout(() => go('orders'), 30); },
   cancelOrder: async el => {
     if (!confirm(t('cancel') + ' ' + el.dataset.id + '?')) return;
     el.disabled = true;
-    try { const { order } = await api('cancelOrder', { id: el.dataset.id, phone: S.profile.phone }); upsertLocalOrder(order); closeSheet(); render(); toast('✓ ' + t('st_cancelled')); }
-    catch (e) { toast(e.offline ? t('offline') : e.message, 4000); el.disabled = false; }
+    try { const { order } = await capi('cancelOrder', { id: el.dataset.id }); upsertLocalOrder(order); closeSheet(); render(); sadPopup(order); }
+    catch (e) { toast(e.offline ? t('offline') : msgOf(e), 4000); el.disabled = false; }
   },
   modifyOrder: el => {
     const o = S.orders.find(x => x.id === el.dataset.id); if (!o) return;
@@ -540,14 +592,28 @@ const ACTIONS = {
   chatSend: async el => {
     const inp = $('#chatIn'), text = inp.value.trim(); if (!text) return;
     el.disabled = true;
-    try { const r = await api('chatSend', { phone: S.profile.phone, name: S.profile.name, text }); S.chat = r.messages; S.adminOnline = r.adminOnline; render(); }
-    catch (e) { toast(e.offline ? t('offline') : e.message); el.disabled = false; }
+    try { const r = await capi('chatSend', { text }); S.chat = r.messages; S.adminOnline = r.adminOnline; render(); }
+    catch (e) { toast(e.offline ? t('offline') : msgOf(e)); el.disabled = false; }
   },
   openReview: el => openReview(el.dataset.order),
   star: el => { reviewState.stars = +el.dataset.i; $$('#rvStars button').forEach((b, i) => b.classList.toggle('on', i < reviewState.stars)); },
   submitReview: el => submitReview(el),
   sendCustom: el => sendCustom(el),
-  enableNotif: async () => { try { const p = await Notification.requestPermission(); toast(p === 'granted' ? '🔔 ✓' : '🔕'); } catch (e) { toast('🔕'); } }
+  enableNotif: async () => {
+    try {
+      const p = await Notification.requestPermission();
+      if (p === 'granted') { toast('🔔 ' + t('notif_on')); pushNotify('Keralam Kitchen 🌿', 'You will be notified about your orders here.'); capi('track', { type: 'notify_on', text: 'Turned on notifications' }).catch(() => {}); }
+      else toast('🔕 Notifications blocked — allow them in your browser settings');
+      if ($('#overlay')) closeSheet(); render();
+    } catch (e) { toast('🔕 Not supported on this browser'); }
+  },
+  logout: () => { if (confirm(t('logout') + '?')) doLogout(); },
+  editAccount: () => openAccount(),
+  authMode: el => renderAuth(el.dataset.m),
+  authGo: el => authGo(el),
+  forgot: el => forgotPin(el),
+  saveAccount: el => saveAccount(el),
+  removePhoto: () => { acctPhoto = null; const p = $('#acPrev'); if (p) { p.outerHTML = avatar({ name: S.me.name }, 72).replace('class="avatar"', 'id="acPrev" class="avatar"'); } }
 };
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]'); if (!el || !ACTIONS[el.dataset.a]) return;
@@ -560,7 +626,169 @@ document.addEventListener('change', async e => {
     customPhoto = await fileToDataUrl(f); const p = $('#customPrev'); p.src = customPhoto; p.classList.remove('hidden');
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'chatIn') ACTIONS.chatSend($('[data-a=chatSend]')); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'chatIn') ACTIONS.chatSend($('[data-a=chatSend]'));
+  if (e.key === 'Enter' && (e.target.id === 'auPin' || e.target.id === 'auPhone')) { const b = $('[data-a=authGo]'); if (b) authGo(b); }
+});
+/* digits-only for PIN/phone boxes */
+document.addEventListener('input', e => { if (e.target.dataset && e.target.dataset.digits) e.target.value = e.target.value.replace(/\D/g, '').slice(0, +e.target.dataset.digits); });
+
+/* ---------------- Navigation (phone back button stays inside the app) ---------------- */
+function go(tab, replace) {
+  S.tab = tab; render(); window.scrollTo(0, 0);
+  if (!replace) history.pushState({ tab }, '');
+  if (tab === 'orders') refreshOrders(); if (tab === 'help') loadChat();
+}
+let lastBack = 0;
+window.addEventListener('popstate', e => {
+  if (S._skipPop) { S._skipPop = false; return; }
+  const st = e.state || {};
+  if ($('#overlay')) { closeSheet(true); return; }
+  if (!S.lang || !S.auth) { history.pushState({ tab: 'menu' }, ''); return; }
+  if ($('.lang-screen')) { history.pushState({ tab: S.tab }, ''); render(); return; }
+  if (st.root) {
+    if (S.tab !== 'menu') { history.pushState({ tab: 'menu' }, ''); go('menu', true); return; }
+    if (Date.now() - lastBack < 2500) { history.back(); return; }
+    lastBack = Date.now(); toast(t('exit_back')); history.pushState({ tab: 'menu' }, ''); return;
+  }
+  go(st.tab || 'menu', true);
+});
+
+/* ---------------- Login / signup ---------------- */
+let authPhoto = '';
+function renderAuth(mode = 'login', msg = '') {
+  applyDir();
+  const pr = S.profile || {};
+  const su = mode === 'signup';
+  app.innerHTML = `
+  <div class="auth-screen">
+    <div class="auth-hero"><div style="font-size:46px">🌿</div><h1>Keralam Kitchen</h1><p>${esc(t('tagline'))}</p></div>
+    <div class="card auth-card">
+      <div class="seg"><button class="${!su ? 'on' : ''}" data-a="authMode" data-m="login">${esc(t('login'))}</button><button class="${su ? 'on' : ''}" data-a="authMode" data-m="signup">${esc(t('signup'))}</button></div>
+      <h2 style="margin:14px 0 4px">${esc(su ? t('signup_t') : t('login_t'))}</h2>
+      ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ''}
+      <label class="f">📱 ${esc(t('phone'))} *</label>
+      <input class="in" id="auPhone" inputmode="numeric" autocomplete="tel" data-digits="10" maxlength="10" placeholder="98XXXXXXXX" value="${esc(pr.phone || '')}">
+      ${su ? `
+      <label class="f">👤 ${esc(t('name'))} *</label><input class="in" id="auName" autocomplete="name" value="${esc(pr.name || '')}">
+      <label class="f">🏠 ${esc(t('flat'))} *</label><input class="in" id="auFlat" placeholder="A-504" value="${esc(pr.flat || '')}">` : ''}
+      <label class="f">🔒 ${esc(su ? t('pin2') : t('pin'))} *</label>
+      <input class="in pin-in" id="auPin" type="password" inputmode="numeric" autocomplete="${su ? 'new-password' : 'current-password'}" data-digits="6" maxlength="6" placeholder="••••">
+      ${su ? `
+      <label class="f">📷 ${esc(t('profile_photo'))}</label>
+      <div class="row"><label class="btn ghost sm">📷 ${esc(t('photo'))}<input type="file" accept="image/*" id="auPhoto" hidden></label><img id="auPrev" class="avatar hidden" style="width:56px;height:56px" alt=""></div>
+      <label class="check"><input type="checkbox" id="auAgree" checked><span>${esc(t('agree'))} — <a href="#" data-a="showDisclaimer">${esc(t('disclaimer_t'))}</a></span></label>` : ''}
+      <button class="btn primary big" style="margin-top:14px" data-a="authGo" data-m="${mode}">${esc(su ? t('signup') : t('login'))} ›</button>
+      ${!su ? `<button class="btn ghost big" style="margin-top:10px" data-a="forgot">🔑 ${esc(t('forgot'))}</button>` : ''}
+      <p class="small" style="text-align:center;margin-top:14px"><a href="#" data-a="authMode" data-m="${su ? 'login' : 'signup'}">${esc(su ? t('have_acc') : t('no_acc'))}</a></p>
+    </div>
+    <p class="small muted" style="text-align:center">One account per mobile number. Your PIN keeps your orders private.<br>${CFG.PHONES.map(p => `<a class="phone-link" href="${waLink(p, 'Hi Keralam Kitchen 🌿 I need help logging in')}" target="_blank" rel="noopener">🟢 ${p}</a>`).join(' ')}</p>
+    <p class="small" style="text-align:center"><a href="#" data-a="openLang">🌐 ${esc(t('change_lang'))}</a> · <a href="admin.html">Kitchen login</a></p>
+  </div>`;
+  authPhoto = '';
+  const f = $('#auPhoto');
+  if (f) f.onchange = async e => { const file = e.target.files[0]; if (!file) return; authPhoto = await fileToDataUrl(file, 400); const p = $('#auPrev'); p.src = authPhoto; p.classList.remove('hidden'); };
+  setTimeout(() => { const el = $(pr.phone ? '#auPin' : '#auPhone'); if (el && !su) el.focus(); }, 50);
+}
+async function authGo(btn) {
+  const su = btn.dataset.m === 'signup';
+  const phone = KKCore.digits($('#auPhone').value), pin = $('#auPin').value.trim();
+  if (phone.length !== 10) return toast('Enter your 10-digit mobile number');
+  if (!/^\d{4,6}$/.test(pin)) return toast('PIN must be 4 to 6 digits');
+  const d = { phone, pin, device: deviceName() };
+  if (su) {
+    d.name = $('#auName').value.trim(); d.flat = $('#auFlat').value.trim(); d.photo = authPhoto;
+    if (!d.name || !d.flat) return toast(t('required'));
+    if (!$('#auAgree').checked) return toast('✓ ' + t('agree'));
+  }
+  btn.disabled = true; const old = btn.textContent; btn.textContent = '⏳ …';
+  try {
+    const r = await api(su ? 'register' : 'login', d);
+    S.auth = { phone, pin }; lsSet('kk_auth', S.auth); setMe(r.customer);
+    if (su) { S.agreed = true; lsSet('kk_agreed', true); }
+    try { sessionStorage.setItem('kk_visit', 1); } catch (e) {}
+    S.tab = 'menu'; render(); handleHash();
+    confetti(su ? 220 : 90);
+    toast(su ? '🎉 Welcome to Keralam Kitchen, ' + r.customer.name.split(' ')[0] + '!' : '👋 Welcome back, ' + r.customer.name.split(' ')[0] + '!', 3500);
+    refreshOrders(true); flushQueue();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = old;
+    if (e.offline) return toast(t('offline'), 4000);
+    if (/^EXISTS:/.test(e.message)) return renderAuth('login', msgOf(e));
+    if (/^NOACCOUNT:/.test(e.message)) return renderAuth('signup', msgOf(e));
+    if (/^BLOCKED:/.test(e.message)) return renderBlocked();
+    toast(msgOf(e), 4500);
+  }
+}
+async function forgotPin(btn) {
+  const phone = KKCore.digits($('#auPhone').value);
+  if (phone.length !== 10) return toast('Enter your 10-digit mobile number first');
+  btn.disabled = true;
+  try {
+    await api('forgotPin', { phone });
+    openSheet(`<div class="success"><div class="tick">🔑</div><h2>We've told the kitchen</h2>
+      <p class="muted">The Keralam Kitchen team will confirm it's you and send your PIN on WhatsApp. You can also message us now:</p></div>
+      ${CFG.PHONES.map(p => `<a class="btn wa big" style="margin-top:8px" href="${waLink(p, 'Hi Keralam Kitchen 🌿 I forgot my PIN. My number is ' + phone)}" target="_blank" rel="noopener">🟢 WhatsApp ${p}</a>`).join('')}
+      <button class="btn ghost big" style="margin-top:10px" data-a="close">OK</button>`, true);
+  } catch (e) { toast(e.offline ? t('offline') : msgOf(e), 4500); if (/^NOACCOUNT:/.test(e.message)) renderAuth('signup', msgOf(e)); }
+  btn.disabled = false;
+}
+function renderBlocked() {
+  S.auth = null; lsSet('kk_auth', null);
+  app.innerHTML = `<div class="auth-screen"><div class="card auth-card" style="text-align:center"><div style="font-size:56px">🙏</div>
+    <h2>Your account is on hold</h2><p class="muted">Please contact Keralam Kitchen to sort this out.</p>
+    ${CFG.PHONES.map(p => `<a class="btn wa big" style="margin-top:8px" href="${waLink(p, 'Hi Keralam Kitchen 🌿 my account is on hold, please help')}" target="_blank" rel="noopener">🟢 WhatsApp ${p}</a>`).join('')}
+    <button class="btn ghost big" style="margin-top:10px" data-a="authMode" data-m="login">← ${esc(t('login'))}</button></div></div>`;
+}
+
+/* ---------------- My account ---------------- */
+let acctPhoto;
+function openAccount() {
+  if (!S.me) return;
+  acctPhoto = undefined;
+  openSheet(`
+    <div class="row between"><h2 style="margin:0">👤 ${esc(t('my_acc'))}</h2><button class="btn sm ghost" data-a="close">✕</button></div>
+    <div class="row" style="margin-top:12px">${avatar(S.me, 72).replace('class="avatar"', 'id="acPrev" class="avatar"')}
+      <div class="row" style="gap:6px"><label class="btn sm">📷 ${esc(t('photo'))}<input type="file" accept="image/*" id="acPhoto" hidden></label>
+      ${S.me.photo ? `<button class="btn sm ghost" data-a="removePhoto">${esc(t('remove_photo'))}</button>` : ''}</div></div>
+    <label class="f">${esc(t('name'))}</label><input class="in" id="acName" value="${esc(S.me.name)}">
+    <label class="f">${esc(t('flat'))}</label><input class="in" id="acFlat" value="${esc(S.me.flat)}">
+    <label class="f">${esc(t('phone'))}</label><input class="in" value="${esc(S.me.phone)}" disabled>
+    <p class="small muted" style="margin:4px 0 0">To change your mobile number, please contact the kitchen.</p>
+    <label class="f">🔒 ${esc(t('new_pin'))}</label><input class="in" id="acPin" type="password" inputmode="numeric" data-digits="6" maxlength="6" autocomplete="new-password">
+    <button class="btn primary big" style="margin-top:14px" data-a="saveAccount">✓ ${esc(t('save'))}</button>
+    <button class="btn ghost big" style="margin-top:10px" data-a="logout">⎋ ${esc(t('logout'))}</button>`);
+  $('#acPhoto').onchange = async e => { const f = e.target.files[0]; if (!f) return; acctPhoto = await fileToDataUrl(f, 400); const p = $('#acPrev'); p.outerHTML = `<img id="acPrev" class="avatar" src="${acctPhoto}" style="width:72px;height:72px" alt="">`; };
+}
+async function saveAccount(btn) {
+  const d = { name: $('#acName').value.trim(), flat: $('#acFlat').value.trim() };
+  if (!d.name || !d.flat) return toast(t('required'));
+  const np = $('#acPin').value.trim();
+  if (np) { if (!/^\d{4,6}$/.test(np)) return toast('PIN must be 4 to 6 digits'); d.newPin = np; }
+  if (acctPhoto !== undefined) d.photo = acctPhoto || '';
+  btn.disabled = true;
+  try {
+    const r = await capi('updateProfile', d);
+    if (np) { S.auth = { ...S.auth, pin: np }; lsSet('kk_auth', S.auth); }
+    setMe(r.customer); closeSheet(); render(); toast('✓ ' + t('save'));
+  } catch (e) { toast(e.offline ? t('offline') : msgOf(e), 4000); btn.disabled = false; }
+}
+
+/* ---------------- Notifications + cancel popup ---------------- */
+function notifState() { return 'Notification' in window ? Notification.permission : 'unsupported'; }
+async function pushNotify(title, body) {
+  if (notifState() !== 'granted') return;
+  try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) return reg.showNotification(title, { body, icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [120, 60, 120] }); } catch (e) {}
+  try { new Notification(title, { body, icon: 'icon-192.png' }); } catch (e) {}
+}
+function sadPopup(o) {
+  openSheet(`<div class="success"><div class="sad">😢</div>
+    <h2 style="margin:0">${esc(t('sorry_t'))}</h2>
+    <p class="muted">${esc(t('sorry_s'))}</p>
+    <p class="small muted">${esc(o.id)}</p></div>
+    <button class="btn primary big" data-a="home">🍽️ ${esc(t('menu'))}</button>
+    <button class="btn ghost big" style="margin-top:10px" data-a="close">OK</button>`, true);
+}
 
 /* ---------------- Boot ---------------- */
 function handleHash() {
@@ -568,10 +796,15 @@ function handleHash() {
   if (m) { S.tab = 'orders'; render(); refreshOrders().then(() => openReview(m[1])); history.replaceState(null, '', location.pathname); }
 }
 (function boot() {
-  if (!S.lang) { renderLang(); } else { render(); handleHash(); }
+  history.replaceState({ root: 1 }, '');
+  history.pushState({ tab: 'menu' }, '');
+  if (!S.lang) { renderLang(); }
+  else if (!S.auth) { renderAuth(S.profile.phone ? 'login' : 'signup'); }
+  else { render(); handleHash(); }
   loadMenu(); refreshOrders(true); flushQueue();
+  try { if (!sessionStorage.getItem('kk_visit')) { sessionStorage.setItem('kk_visit', 1); capi('visit', { device: deviceName() }).then(r => { setMe(r.customer); setSettings(r.settings); }).catch(() => {}); } } catch (e) {}
   window.addEventListener('online', () => { flushQueue(); loadMenu(); });
   setInterval(tickTimers, 1000);
-  setInterval(() => { if (document.hidden || !S.lang) return; refreshOrders(true); if (S.tab === 'help') loadChat(); }, 20000);
+  setInterval(() => { if (document.hidden || !S.lang || !S.auth) return; refreshOrders(true); if (S.tab === 'help') loadChat(); }, 20000);
   setInterval(() => { if (!document.hidden && S.lang) loadMenu(); }, 120000);
 })();

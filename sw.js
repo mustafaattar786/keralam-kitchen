@@ -1,6 +1,6 @@
 /* Offline support: caches the app so it opens without internet. Bump VERSION after edits. */
-const VERSION = 'kk-v4';
-const SHELL = ['./', 'index.html', 'admin.html', 'styles.css', 'config.js', 'core.js', 'i18n.js', 'common.js', 'app.js', 'admin.js',
+const VERSION = 'kk-v5';
+const SHELL = ['./', 'index.html', 'admin.html', 'styles.css', 'admin.css', 'config.js', 'core.js', 'i18n.js', 'common.js', 'app.js', 'admin.js',
   'manifest.json', 'icon.svg', 'icon-192.png', 'img/batter.jpg', 'img/chutney.jpg', 'img/roti.jpg', 'img/garlic.jpg', 'img/menu-poster.jpg'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

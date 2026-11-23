@@ -51,8 +51,13 @@ async function api(action, d = {}) {
 
 function waLink(num, text) { return 'https://wa.me/91' + KKCore.digits(num) + '?text=' + encodeURIComponent(text); }
 function telLink(num) { return 'tel:+91' + KKCore.digits(num); }
+/* UPI ID can be changed from the admin dashboard -> Settings (falls back to config.js) */
+window.KK_SET = lsGet('kk_settings', {});
+function upiId() { return (window.KK_SET && window.KK_SET.upiId) || CFG.UPI_ID || ''; }
+function upiName() { return (window.KK_SET && window.KK_SET.upiName) || CFG.UPI_NAME || 'Keralam Kitchen'; }
+function setSettings(s) { if (s) { window.KK_SET = s; lsSet('kk_settings', s); } }
 function upiLink(amount, note) {
-  return 'upi://pay?pa=' + encodeURIComponent(CFG.UPI_ID) + '&pn=' + encodeURIComponent(CFG.UPI_NAME) + '&am=' + amount + '&cu=INR&tn=' + encodeURIComponent(note);
+  return 'upi://pay?pa=' + encodeURIComponent(upiId()) + '&pn=' + encodeURIComponent(upiName()) + '&am=' + amount + '&cu=INR&tn=' + encodeURIComponent(note);
 }
 function siteUrl() { return location.origin + location.pathname.replace(/[^/]*$/, ''); }
 
@@ -75,6 +80,35 @@ function fileToDataUrl(file, max = 900) {
     };
     fr.readAsDataURL(file);
   });
+}
+
+function deviceName() {
+  const u = navigator.userAgent;
+  const os = /iPhone|iPad/.test(u) ? 'iPhone/iPad' : /Android/.test(u) ? 'Android' : /Mac/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'Other';
+  const br = /Edg\//.test(u) ? 'Edge' : /CriOS|Chrome\//.test(u) ? 'Chrome' : /Safari\//.test(u) ? 'Safari' : /Firefox/.test(u) ? 'Firefox' : 'Browser';
+  return os + ' / ' + br;
+}
+
+/* Confetti - tiny, no library */
+function confetti(n = 120, origin) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const c = document.createElement('canvas'), x = c.getContext('2d');
+  c.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:300';
+  const W = c.width = innerWidth * devicePixelRatio, H = c.height = innerHeight * devicePixelRatio;
+  document.body.appendChild(c);
+  const cols = ['#0f5132', '#1f7a4a', '#f4b91e', '#ff9f1c', '#46e07a', '#e9572b', '#ffffff'];
+  const ox = origin ? origin.x * devicePixelRatio : W / 2, oy = origin ? origin.y * devicePixelRatio : H * 0.35;
+  const P = Array.from({ length: n }, () => ({ x: ox, y: oy, vx: (Math.random() - .5) * 26, vy: -Math.random() * 26 - 6, r: Math.random() * 7 + 5,
+    c: cols[Math.random() * cols.length | 0], a: Math.random() * 6, va: (Math.random() - .5) * .4, leaf: Math.random() < .25 }));
+  let f = 0;
+  (function tick() {
+    x.clearRect(0, 0, W, H);
+    P.forEach(p => { p.vy += .9; p.vx *= .985; p.x += p.vx; p.y += p.vy; p.a += p.va;
+      x.save(); x.translate(p.x, p.y); x.rotate(p.a); x.fillStyle = p.c;
+      if (p.leaf) { x.font = (p.r * 3.2) + 'px serif'; x.fillText('\u{1F33F}', 0, 0); } else x.fillRect(-p.r, -p.r / 2, p.r * 2, p.r);
+      x.restore(); });
+    if (++f < 110) requestAnimationFrame(tick); else c.remove();
+  })();
 }
 
 function toast(msg, ms = 2600) {
