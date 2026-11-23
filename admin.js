@@ -36,7 +36,7 @@ function renderLogin(err) {
     try { A.auth = auth; await adminApi('adminLogin'); lsSet('kk_admin_auth', auth); await load(); try { Notification.requestPermission(); } catch (e) {} }
     catch (e) { A.auth = null; renderLogin(e.offline ? 'No internet connection' : e.message); }
   };
-  $('#lgo').onclick = go; $('#lpin').onkeydown = e => e.key === 'Enter' && go();
+  $('#lgo').onclick = go; $('#lpin').onkeydown = e => { if (e.key === 'Enter') go(); };
 }
 
 /* ---------- Data ---------- */

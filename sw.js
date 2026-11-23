@@ -1,5 +1,5 @@
 /* Offline support: caches the app so it opens without internet. Bump VERSION after edits. */
-const VERSION = 'kk-v2';
+const VERSION = 'kk-v3';
 const SHELL = ['./', 'index.html', 'admin.html', 'styles.css', 'config.js', 'core.js', 'i18n.js', 'common.js', 'app.js', 'admin.js',
   'manifest.json', 'icon.svg', 'icon-192.png', 'img/batter.jpg', 'img/chutney.jpg', 'img/roti.jpg', 'img/garlic.jpg', 'img/menu-poster.jpg'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
